@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harmonica AI Song Maker</title>
+<meta name="description" content="Turn any song into a playable arrangement for the Hohner Echo Harp 56/96.">
+<link rel="stylesheet" href="/src/ui/styles.css">
+</head>
+<body>
+
+<header class="masthead">
+  <h1>Harmonica AI Song Maker</h1>
+  <p class="subtitle">Hohner Echo Harp 56/96 · C and G sides</p>
+  <button type="button" id="settings-toggle" class="ghost" popovertarget="settings">Settings</button>
+</header>
+
+<div id="settings" popover class="settings">
+  <h2>Settings</h2>
+  <label for="backend-url">Backend URL <small>(optional — for YouTube links and vocal isolation)</small></label>
+  <input type="url" id="backend-url" placeholder="https://yourname-harmonica.hf.space">
+  <button type="button" id="save-backend">Save and test</button>
+  <p class="note">
+    Without a backend, everything still works for audio files you upload — transcription,
+    arranging and playback all run in this browser tab. See the README for the one-click
+    Hugging Face Space setup.
+  </p>
+</div>
+
+<main>
+
+  <section class="input-panel" aria-labelledby="input-heading">
+    <h2 id="input-heading" class="visually-hidden">Load a song</h2>
+
+    <div id="drop-zone" class="drop-zone">
+      <label for="file" class="drop-label">
+        <strong>Drop an audio file here</strong>
+        <span>or click to choose — MP3, WAV, M4A, FLAC, OGG</span>
+      </label>
+      <input type="file" id="file" accept="audio/*">
+    </div>
+
+    <div class="link-row">
+      <input type="url" id="link" placeholder="…or paste a YouTube / audio link" disabled>
+      <button type="button" id="load-link" disabled>Load</button>
+    </div>
+    <p id="backend-hint" class="hint"></p>
+
+    <label class="checkbox">
+      <input type="checkbox" id="isolate-vocals" disabled>
+      Isolate the vocal first <small>(much better melody detection, several minutes on a free server)</small>
+    </label>
+
+    <p class="hint">
+      No file to hand? <button type="button" id="load-sample" class="linklike">Load a sample tune</button>
+      to see what the app does.
+    </p>
+
+    <p id="status" class="status">Loading…</p>
+    <progress id="progress" max="1" value="0" hidden></progress>
+  </section>
+
+  <section id="results" class="results" hidden aria-labelledby="song-title">
+    <h2 id="song-title">—</h2>
+
+    <dl id="stats" class="stats"></dl>
+
+    <div class="controls-row">
+      <div class="control-group">
+        <label for="key-select">Key</label>
+        <select id="key-select"></select>
+      </div>
+
+      <div class="control-group difficulty">
+        <span class="group-label">Difficulty</span>
+        <button type="button" id="difficulty-easy" class="selected">Easy</button>
+        <button type="button" id="difficulty-medium">Medium</button>
+        <button type="button" id="difficulty-full">Full</button>
+      </div>
+    </div>
+
+    <div id="harp-container" class="harp-container"></div>
+
+    <div id="tab-container" class="tab-container">
+      <div class="playhead" aria-hidden="true"></div>
+    </div>
+
+    <div class="transport">
+      <button type="button" id="play" class="primary">▶ Play</button>
+      <span id="time-readout" class="readout">0:00</span>
+      <input type="range" id="scrub" min="0" max="1" step="0.01" value="0" aria-label="Seek">
+    </div>
+
+    <div class="controls-row">
+      <div class="control-group">
+        <label for="speed">Speed <span id="speed-readout" class="readout">100%</span></label>
+        <input type="range" id="speed" min="0.4" max="1.2" step="0.05" value="1">
+      </div>
+
+      <div class="control-group loop">
+        <span class="group-label">Loop</span>
+        <button type="button" id="loop-set">Set A</button>
+        <button type="button" id="loop-clear">Clear</button>
+        <span id="loop-readout" class="readout">no loop</span>
+      </div>
+
+      <div class="control-group">
+        <label for="track-volume">Original track</label>
+        <input type="range" id="track-volume" min="0" max="1" step="0.05" value="0.7">
+      </div>
+
+      <div class="control-group">
+        <label for="harp-volume">Harmonica</label>
+        <input type="range" id="harp-volume" min="0" max="1" step="0.05" value="0.8">
+      </div>
+
+      <div class="control-group checkboxes">
+        <label class="checkbox"><input type="checkbox" id="metronome"> Metronome</label>
+        <label class="checkbox"><input type="checkbox" id="count-in"> Count-in</label>
+      </div>
+    </div>
+
+    <details class="legend">
+      <summary>How to read the tab</summary>
+      <ul>
+        <li><strong>↑3</strong> — blow into channel 3. <strong>↓5</strong> — draw on channel 5.</li>
+        <li><span class="swatch side-C"></span> blue is the <strong>C side</strong>,
+            <span class="swatch side-G"></span> amber is the <strong>G side</strong>.</li>
+        <li><strong>FLIP TO G</strong> means turn the harp over. A red flip marker means
+            there is barely time — expect to practise that transition on its own.</li>
+        <li>A dashed underline marks a note that had to be changed: either moved an octave
+            to fit the harp, or swapped for a neighbour because the original pitch does not
+            exist on this instrument. Hover it to see the original.</li>
+        <li>Small numbers under a note are extra holes to cover for the chord or octave.</li>
+        <li>Click anywhere on the strip to jump there.</li>
+      </ul>
+    </details>
+  </section>
+
+</main>
+
+<script type="module">
+  import { start } from '/src/ui/app.ts';
+  start();
+</script>
+
+</body>
+</html>

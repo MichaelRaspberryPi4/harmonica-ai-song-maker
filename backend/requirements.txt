@@ -1,0 +1,9 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+pydantic==2.10.3
+yt-dlp==2024.12.13
+# Optional: vocal isolation. Large download and slow on CPU -- comment these two out
+# if you only want YouTube extraction and a faster, smaller Space.
+demucs==4.0.1
+torch==2.5.1

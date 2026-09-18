@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.env
+backend/__pycache__/
+backend/.venv/
+
+# scratch space for one-off analysis scripts
+.scratch/

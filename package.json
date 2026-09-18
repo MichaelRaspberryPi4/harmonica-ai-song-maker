@@ -1,0 +1,22 @@
+{
+  "name": "harmonica-ai-song-maker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn any song into a playable arrangement for the Hohner Echo Harp 56/96 (C/G tremolo).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^5.4.10"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "^1.0.1",
+    "@tensorflow/tfjs": "^4.22.0"
+  }
+}
