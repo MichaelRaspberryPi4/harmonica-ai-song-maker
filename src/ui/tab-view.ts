@@ -9,7 +9,7 @@
 
 import type { ArrangedNote, Difficulty } from '../core/arrange.ts';
 import { midiToName } from '../core/pitch.ts';
-import { CHANNELS_PER_SIDE, type Side } from '../core/harmonica.ts';
+import { holesInPositionOrder, type Side } from '../core/harmonica.ts';
 
 const PIXELS_PER_SECOND = 170;
 const PLAYHEAD_OFFSET = 0.22; // fraction of the viewport width
@@ -91,7 +91,8 @@ export class TabView {
 
     const channel = document.createElement('span');
     channel.className = 'channel';
-    channel.textContent = `${arrow}${lead.channel}`;
+    // The hole position, not the channel: this is the opening the player covers.
+    channel.textContent = `${arrow}${lead.position}`;
     element.appendChild(channel);
 
     const name = document.createElement('span');
@@ -102,7 +103,12 @@ export class TabView {
     if (difficulty !== 'easy' && note.holes.length > 1) {
       const extra = document.createElement('span');
       extra.className = 'chord-tones';
-      extra.textContent = note.holes.slice(1).map((h) => h.channel).join('+');
+      // Chord holes are never adjacent -- the opposite-breath holes sit between them and
+      // stay silent -- so the useful instruction is the span of holes to cover.
+      const positions = note.holes.map((h) => h.position);
+      const low = Math.min(...positions);
+      const high = Math.max(...positions);
+      extra.textContent = `cover ${low}-${high}`;
       element.appendChild(extra);
     }
 
@@ -146,7 +152,7 @@ export class TabView {
       this.elements[index]?.classList.add('active');
       this.activeIndex = index;
       const note = this.notes[index];
-      this.renderHarp(note?.side ?? 'C', note ? note.holes.map((h) => h.channel) : [], note?.direction);
+      this.renderHarp(note?.side ?? 'C', note ? note.holes.map((h) => h.position) : [], note?.direction);
     }
   }
 
@@ -156,8 +162,12 @@ export class TabView {
     return this.notes.findIndex((n) => songSeconds >= n.start && songSeconds < n.end);
   }
 
-  /** A picture of the harp with the holes you need lit up. */
-  private renderHarp(side: Side, channels: number[], direction?: 'blow' | 'draw'): void {
+  /**
+   * A picture of the side you are on, drawn as the 24 holes actually are: blow and draw
+   * alternating along the comb, with the hole to cover lit. Showing 12 channels here would
+   * repeat the mistake the tab numbers used to make.
+   */
+  private renderHarp(side: Side, positions: number[], direction?: 'blow' | 'draw'): void {
     this.harp.replaceChildren();
     this.harp.className = `harp-map side-${side}`;
 
@@ -168,20 +178,33 @@ export class TabView {
 
     const row = document.createElement('div');
     row.className = 'harp-holes';
-    for (let channel = 1; channel <= CHANNELS_PER_SIDE; channel++) {
-      const hole = document.createElement('div');
-      hole.className = 'harp-hole';
-      if (channels.includes(channel)) {
-        hole.classList.add('lit', direction === 'blow' ? 'blow' : 'draw');
+    for (const hole of holesInPositionOrder(side)) {
+      const cell = document.createElement('div');
+      cell.className = `harp-hole dir-${hole.direction}`;
+      if (positions.includes(hole.position)) {
+        cell.classList.add('lit', hole.direction === 'blow' ? 'blow' : 'draw');
       }
-      hole.textContent = String(channel);
-      row.appendChild(hole);
+      cell.title = `Hole ${hole.position}: ${hole.direction} ${midiToName(hole.midi)}`;
+
+      const number = document.createElement('span');
+      number.className = 'hole-number';
+      number.textContent = String(hole.position);
+      cell.appendChild(number);
+
+      const mark = document.createElement('span');
+      mark.className = 'hole-breath';
+      mark.textContent = hole.direction === 'blow' ? '↑' : '↓';
+      cell.appendChild(mark);
+
+      row.appendChild(cell);
     }
     this.harp.appendChild(row);
 
     const breath = document.createElement('div');
     breath.className = 'harp-breath';
-    breath.textContent = channels.length === 0 ? '—' : direction === 'blow' ? '↑ blow' : '↓ draw';
+    breath.textContent = positions.length === 0
+      ? '—'
+      : `${direction === 'blow' ? '↑ blow' : '↓ draw'} ${positions.length > 1 ? `${Math.min(...positions)}-${Math.max(...positions)}` : positions[0]}`;
     this.harp.appendChild(breath);
   }
 }

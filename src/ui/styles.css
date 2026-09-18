@@ -189,27 +189,36 @@ progress { width: 100%; height: 6px; margin-top: 8px; }
 .harp-map.side-C .harp-label { background: var(--side-c-dim); color: var(--side-c); }
 .harp-map.side-G .harp-label { background: var(--side-g-dim); color: var(--side-g); }
 
-.harp-holes { display: flex; gap: 5px; flex: 1; }
+.harp-holes { display: flex; gap: 2px; flex: 1; }
 .harp-hole {
   flex: 1;
-  min-width: 26px;
-  aspect-ratio: 1 / 1.5;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
+  min-width: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px 0 4px;
+  border-radius: 4px;
   background: #0d0f14;
   border: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 10px;
   color: var(--muted);
   transition: background 0.08s, color 0.08s, transform 0.08s;
 }
-.harp-hole.lit { transform: scale(1.12); font-weight: 700; }
+/* Draw holes sit between blow holes; a dashed top edge keeps the alternation readable. */
+.harp-hole.dir-draw { border-top-style: dashed; background: #0a0c10; }
+.harp-hole .hole-number { font-weight: 600; line-height: 1; }
+.harp-hole .hole-breath { font-size: 9px; opacity: 0.5; line-height: 1; }
+
+.harp-hole.lit { transform: scale(1.18); font-weight: 700; }
+.harp-hole.lit .hole-breath { opacity: 1; }
 .harp-hole.lit.blow { background: var(--side-c); color: #04203c; border-color: var(--side-c); }
 .harp-map.side-G .harp-hole.lit.blow { background: var(--side-g); color: #2b1c02; border-color: var(--side-g); }
 .harp-hole.lit.draw { background: transparent; color: var(--side-c); border-color: var(--side-c); border-width: 2px; }
 .harp-map.side-G .harp-hole.lit.draw { color: var(--side-g); border-color: var(--side-g); }
 
-.harp-breath { font-size: 15px; font-weight: 700; min-width: 72px; text-align: right; }
+.harp-breath { font-size: 14px; font-weight: 700; min-width: 96px; text-align: right; }
 
 /* --- the tab strip ------------------------------------------------------- */
 

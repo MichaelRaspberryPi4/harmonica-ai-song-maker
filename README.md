@@ -31,32 +31,54 @@ side — which are usable as G7, Dm7 and D7 fragments but are not triads.
 G side, so some songs force you to physically turn the instrument over mid-tune. This is
 the single costliest physical action, and the arranger treats it that way.
 
-### Note layout
+### Blow and draw are separate holes
 
-From Hohner's own datasheet (`ECHO WENDER TREMOLO 2 X 48`, model M5696357), reproduced in
-code at [`src/core/harmonica.ts`](src/core/harmonica.ts) and pinned note-for-note by
-[`test/harmonica.test.ts`](test/harmonica.test.ts).
+This is the single most important fact about the instrument, and the thing that makes its
+tab unlike any other harmonica's. In Hohner's datasheet the Blow and Draw rows are drawn
+offset from one another, and that offset is literal: they sit at **different places along
+the comb**. You do not blow and draw into the same opening.
 
-**C side**
+The arithmetic confirms it. 12 channels x 2 breath positions x 2 rows (the tremolo pair,
+two reeds a few cents apart) = **48 holes per side, 96 across the instrument** — which is
+where `56/96` and `2 x 48` come from. If blow and draw shared a chamber there would be
+only 24 holes a side.
 
-| Ch | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+So the number a tab must show is the **hole position**, 1–24 along the side, not the
+channel. Odd holes blow, even holes draw.
+
+**C side, in physical order**
+
+| Hole | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Blow | E3 | G3 | C4 | E4 | G4 | C5 | E5 | G5 | C6 | E6 | G6 | C7 |
-| Draw | G3 | B3 | D4 | F4 | A4 | B4 | D5 | F5 | A5 | B5 | D6 | F6 |
+| | E3↑ | G3↓ | G3↑ | B3↓ | **C4↑** | D4↓ | E4↑ | F4↓ | G4↑ | A4↓ | C5↑ | B4↓ |
 
-**G side**
-
-| Ch | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+| Hole | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Blow | G3 | B3 | D4 | G4 | B4 | D5 | G5 | B5 | D6 | G6 | B6 | D7 |
-| Draw | A3 | D4 | F♯4 | A4 | C5 | E5 | F♯5 | A5 | C6 | E6 | F♯6 | A6 |
+| | E5↑ | D5↓ | G5↑ | F5↓ | C6↑ | A5↓ | E6↑ | B5↓ | G6↑ | D6↓ | C7↑ | F6↓ |
 
-> **On hole counts.** The harp has **48 hole openings per side**, but only **12 numbered
-> channels**. Each channel occupies four openings: blow and draw, on the upper and lower
-> reed plate. That is where the model number comes from — 12 channels x 4 = 48 per side,
-> 96 in total. Tab numbers therefore run 1–12, matching the cover plate. Confirmed against
-> a physical instrument. For a different Echo model, `CHANNELS_PER_SIDE` in
-> [`src/core/harmonica.ts`](src/core/harmonica.ts) is the only constant to change.
+**G side, in physical order**
+
+| Hole | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | G3↑ | A3↓ | B3↑ | D4↓ | D4↑ | F♯4↓ | G4↑ | A4↓ | B4↑ | C5↓ | D5↑ | E5↓ |
+
+| Hole | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 | 24 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| | G5↑ | F♯5↓ | B5↑ | A5↓ | D6↑ | C6↓ | G6↑ | E6↓ | B6↑ | F♯6↓ | D7↑ | A6↓ |
+
+Two consequences worth internalising:
+
+- **Middle C is hole 5, not hole 3.** Channel 3 is a pair of holes, and its blow half is
+  the fifth opening along. Numbering by channel makes every note in a tab wrong.
+- **The same pitch can sit in two adjacent holes.** Hole 2 draws G3 and hole 3 blows the
+  same G3. The app picks whichever keeps your mouth closest to where it already was.
+
+Chords fall out of the alternation for free: cover holes 1–5 and blow, and you sound
+holes 1, 3 and 5 (E3, G3, C4) while the draw holes between them stay silent. That is why
+the tab writes chords as a span — `cover 1-5` — rather than a list of holes.
+
+Generated in [`src/core/harmonica.ts`](src/core/harmonica.ts) and pinned hole-by-hole
+against the datasheet by [`test/harmonica.test.ts`](test/harmonica.test.ts).
 
 ---
 
@@ -155,5 +177,5 @@ src/audio/      beat tracking, Basic Pitch glue, Web Audio playback
 src/ui/         tab strip, harp diagram, application wiring
 src/api/        optional backend client
 backend/        FastAPI service for links and vocal isolation
-test/           41 tests, no browser required
+test/           59 tests, no browser required
 ```

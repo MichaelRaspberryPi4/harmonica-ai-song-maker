@@ -2,9 +2,22 @@
  * Note layout for the Hohner Echo Harp 56/96 (double-sided C/G tremolo, Wiener tuning).
  *
  * Source: HOHNER DATASHEET "ECHO WENDER TREMOLO 2 X 48", model M5696357 (C/G).
- * The datasheet gives 12 numbered channels per side. `CHANNELS_PER_SIDE` below is the
- * one knob to turn if your instrument is physically larger -- everything else derives
- * from the tuning cycles, so no other code needs to change.
+ *
+ * The single most important thing about this instrument, and the thing the datasheet
+ * communicates only through the layout of its table: **blow and draw are separate holes.**
+ * The Blow and Draw rows are drawn offset from one another because they genuinely sit at
+ * different places along the comb. A "channel" is a pair of adjacent hole positions -- one
+ * you blow, one you draw -- not a single opening you do both into.
+ *
+ * The arithmetic confirms it. 12 channels x 2 breath positions x 2 rows (the tremolo pair,
+ * two reeds a few cents apart) = 48 holes per side, 96 across the instrument, which is
+ * where 56/96 and "2 x 48" come from. Were blow and draw to share a chamber there would be
+ * only 24 holes a side.
+ *
+ * So the number a player needs is the **hole position**, 1-24 along the side, not the
+ * channel. Reading the C side left to right: E3 blow, G3 draw, G3 blow, B3 draw, C4 blow,
+ * D4 draw... Middle C is the fifth hole, not the third. Getting this wrong makes every
+ * number in a tab wrong, which is exactly what it did.
  *
  * Wiener tuning is regular from channel 3 upward: blow walks a root/3rd/5th cycle and
  * draw walks a 2nd/4th/6th/7th cycle. Only the bottom two channels deviate, where Hohner
@@ -18,15 +31,31 @@ import { SEMITONE, nameToMidi, pitchClass } from './pitch.ts';
 export type Side = 'C' | 'G';
 export type Direction = 'blow' | 'draw';
 
-/** Playing positions per side. Datasheet says 12; see the module comment. */
+/** Channels per side. Each channel occupies two hole positions: one blow, one draw. */
 export const CHANNELS_PER_SIDE = 12;
+
+/** Physical hole positions along one side: two per channel. */
+export const POSITIONS_PER_SIDE = CHANNELS_PER_SIDE * 2;
 
 export interface Hole {
   side: Side;
-  /** 1-based, as printed on the cover plate. */
+  /** Channel number, 1-12, as the Hohner datasheet labels it ("Kanal"). */
   channel: number;
+  /**
+   * Physical hole position along the side, 1-24, counting every opening left to right.
+   * This is what the player actually puts their mouth on, and what a tab must show.
+   */
+  position: number;
   direction: Direction;
   midi: number;
+}
+
+/**
+ * Blow sits on the left of its channel, draw on the right, so positions interleave:
+ * channel 1 is positions 1 (blow) and 2 (draw), channel 2 is 3 and 4, and so on.
+ */
+export function holePosition(channel: number, direction: Direction): number {
+  return direction === 'blow' ? channel * 2 - 1 : channel * 2;
 }
 
 interface SideSpec {
@@ -103,8 +132,16 @@ function buildSide(side: Side, channels: number): Hole[] {
   const spec = SIDE_SPECS[side];
   const holes: Hole[] = [];
   for (let channel = 1; channel <= channels; channel++) {
-    holes.push({ side, channel, direction: 'blow', midi: noteAt(spec.blowCycle, spec.blowAnchor, channel) });
-    holes.push({ side, channel, direction: 'draw', midi: noteAt(spec.drawCycle, spec.drawAnchor, channel) });
+    holes.push({
+      side, channel, direction: 'blow',
+      position: holePosition(channel, 'blow'),
+      midi: noteAt(spec.blowCycle, spec.blowAnchor, channel),
+    });
+    holes.push({
+      side, channel, direction: 'draw',
+      position: holePosition(channel, 'draw'),
+      midi: noteAt(spec.drawCycle, spec.drawAnchor, channel),
+    });
   }
   for (const ex of LOW_OCTAVE_EXCEPTIONS) {
     if (ex.side !== side || ex.channel > channels) continue;
@@ -136,4 +173,9 @@ export function holesForMidi(midi: number, layout: Hole[] = LAYOUT): Hole[] {
 
 export function holesOnSide(side: Side, layout: Hole[] = LAYOUT): Hole[] {
   return layout.filter((h) => h.side === side);
+}
+
+/** One side's holes in the order they physically appear, left to right. */
+export function holesInPositionOrder(side: Side, layout: Hole[] = LAYOUT): Hole[] {
+  return holesOnSide(side, layout).sort((a, b) => a.position - b.position);
 }
