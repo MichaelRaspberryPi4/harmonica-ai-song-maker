@@ -51,11 +51,12 @@ code at [`src/core/harmonica.ts`](src/core/harmonica.ts) and pinned note-for-not
 | Blow | G3 | B3 | D4 | G4 | B4 | D5 | G5 | B5 | D6 | G6 | B6 | D7 |
 | Draw | A3 | D4 | F♯4 | A4 | C5 | E5 | F♯5 | A5 | C6 | E6 | F♯6 | A6 |
 
-> **⚠ Check this against your harp.** A tremolo has two rows of holes and each vertical
-> pair sounds one note, so an instrument with 12 *playing channels* shows 24 *hole
-> openings* per side. If the numbers printed on your cover plate run past 12, change
-> `CHANNELS_PER_SIDE` in [`src/core/harmonica.ts`](src/core/harmonica.ts) — the layout is
-> generated from the tuning cycles, so that one constant is the only thing to edit.
+> **On hole counts.** The harp has **48 hole openings per side**, but only **12 numbered
+> channels**. Each channel occupies four openings: blow and draw, on the upper and lower
+> reed plate. That is where the model number comes from — 12 channels x 4 = 48 per side,
+> 96 in total. Tab numbers therefore run 1–12, matching the cover plate. Confirmed against
+> a physical instrument. For a different Echo model, `CHANNELS_PER_SIDE` in
+> [`src/core/harmonica.ts`](src/core/harmonica.ts) is the only constant to change.
 
 ---
 
@@ -73,9 +74,13 @@ code at [`src/core/harmonica.ts`](src/core/harmonica.ts) and pinned note-for-not
 5. **Choose a key.** All 12 transpositions are scored on how many notes land on pitches
    the harp actually has, how many need octave-folding, and how many harp flips result.
    Ties break toward the original key. You can override the choice.
-6. **Fit the notes.** Anything outside E3–D7 is folded by octaves; anything still on an
-   impossible pitch class is substituted with the nearest playable neighbour, preferring
-   to move down and preferring pitches already common in the piece.
+6. **Fit the notes.** Every pitch is matched against the set of 30 notes the harp can
+   genuinely sound — not against its range, which is not the same thing. Wiener tuning
+   leaves the bottom octave incomplete, so F3 and F♯3 fall inside E3–D7 and are otherwise
+   valid pitch classes, yet no hole sounds them. A miss is resolved by moving to the
+   nearest octave that *does* have the note; only if the letter is absent everywhere does
+   the pitch change, and then to the nearest neighbour, preferring to move down and
+   preferring pitches already common in the piece. Nothing is ever dropped.
 7. **Assign sides.** A two-state Viterbi pass over the whole piece minimises
    (unplayable notes + weighted flips), where a flip across a long rest is cheap and one
    mid-phrase is nearly prohibitive. Greedy assignment fails badly here: the cheapest side
@@ -150,5 +155,5 @@ src/audio/      beat tracking, Basic Pitch glue, Web Audio playback
 src/ui/         tab strip, harp diagram, application wiring
 src/api/        optional backend client
 backend/        FastAPI service for links and vocal isolation
-test/           36 tests, no browser required
+test/           41 tests, no browser required
 ```
