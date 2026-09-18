@@ -9,6 +9,7 @@
  */
 
 import type { ArrangedNote } from '../core/arrange.ts';
+import { eventsInWindow, clicksInWindow } from './scheduling.ts';
 
 /**
  * Cents of detune between the two reeds of a pair. A tremolo harmonica's shimmer is two
@@ -108,6 +109,8 @@ export class Player {
   private scheduledThrough = 0;
   private timer: number | null = null;
   private frame: number | null = null;
+  /** Wall-clock time of the previous tick, used to widen the lookahead if we fall behind. */
+  private lastTickAt = 0;
 
   /** Fallback clock for when there is no original recording loaded. */
   private silentStartedAt = 0;
@@ -214,6 +217,9 @@ export class Player {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
 
+    // Pressing play after a track has run out should start it again, not sit at the end.
+    if (this.duration > 0 && this.currentTime >= this.duration - 0.05) this.seek(0);
+
     this.running = true;
     this.scheduledThrough = this.currentTime;
     if (this.media) {
@@ -237,6 +243,10 @@ export class Player {
 
   private startScheduler(): void {
     this.stopScheduler();
+    this.lastTickAt = 0;
+    // Tick once straight away. setInterval does not fire until a full period has passed,
+    // and that delay is exactly what pushed the opening note of a song into the past.
+    this.tick();
     this.timer = setInterval(() => this.tick(), SCHEDULER_INTERVAL_MS) as unknown as number;
     const paint = () => {
       this.callbacks.onTime?.(this.currentTime);
@@ -267,30 +277,37 @@ export class Player {
 
     // The window is in song time; at half speed, the same wall-clock lookahead covers
     // half as much of the song.
-    const windowEnd = now + SCHEDULE_AHEAD * this.playbackRate;
-    const toWallClock = (songTime: number): number =>
-      this.context.currentTime + (songTime - now) / this.playbackRate;
+    // Normally a fixed lookahead is plenty, but timers get throttled -- in a background
+    // tab to about once a second. A fixed 180ms window would then cover under a fifth of
+    // the elapsed time and the rest of the notes would simply never be scheduled, so the
+    // window grows to cover whatever actually elapsed since the last tick.
+    const elapsed = this.lastTickAt > 0 ? this.context.currentTime - this.lastTickAt : 0;
+    this.lastTickAt = this.context.currentTime;
+    const lookahead = Math.max(SCHEDULE_AHEAD, elapsed * 1.5);
+    const windowEnd = now + lookahead * this.playbackRate;
+    const shared = { from: this.scheduledThrough, to: windowEnd, now, rate: this.playbackRate, loop: this.loop };
 
-    for (const note of this.notes) {
-      if (note.start < this.scheduledThrough || note.start >= windowEnd) continue;
-      if (this.loop && (note.start < this.loop.start || note.start >= this.loop.end)) continue;
-      const duration = Math.max(0.05, (note.end - note.start) / this.playbackRate);
+    for (const event of eventsInWindow(this.notes, shared)) {
+      const note = this.notes[event.index]!;
+      const at = this.context.currentTime + event.offset;
       // Chord tones sit under the melody rather than beside it.
       note.holes.forEach((hole, index) => {
-        this.synth.play(hole.midi, toWallClock(note.start), duration, index === 0 ? 0.26 : 0.13);
+        this.synth.play(hole.midi, at, event.duration, index === 0 ? 0.26 : 0.13);
       });
     }
 
     if (this.metronomeOn) {
-      for (const beat of this.beats) {
-        if (beat < this.scheduledThrough || beat >= windowEnd) continue;
-        if (this.loop && (beat < this.loop.start || beat >= this.loop.end)) continue;
-        const index = this.beats.indexOf(beat);
-        this.synth.click(toWallClock(beat), index % 4 === 0);
+      for (const click of clicksInWindow(this.beats, shared)) {
+        this.synth.click(this.context.currentTime + click.offset, click.index % 4 === 0);
       }
     }
 
     this.scheduledThrough = windowEnd;
+
+    // Drive the display from here too. requestAnimationFrame stops entirely when the
+    // window is hidden or not compositing, which would otherwise freeze the readout and
+    // the tab strip while the music carried on playing.
+    this.callbacks.onTime?.(now);
   }
 
   dispose(): void {

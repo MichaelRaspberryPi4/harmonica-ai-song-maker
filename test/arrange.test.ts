@@ -4,8 +4,8 @@ import {
   arrange, assignSides, chooseTransposition, foldIntoRange, substitute,
   type NoteEvent, type ArrangedNote,
 } from '../src/core/arrange.ts';
-import { PLAYABLE_PITCH_CLASSES, PLAYABLE_MIDI, LOWEST_MIDI, HIGHEST_MIDI } from '../src/core/harmonica.ts';
-import { nameToMidi, pitchClass } from '../src/core/pitch.ts';
+import { PLAYABLE_PITCH_CLASSES, PLAYABLE_MIDI, LOWEST_MIDI, HIGHEST_MIDI, LAYOUT } from '../src/core/harmonica.ts';
+import { nameToMidi, pitchClass, midiToName } from '../src/core/pitch.ts';
 
 /** Builds a melody from note names at a steady eighth-note pace. */
 function melody(names: string[], step = 0.5, sustain = 0.45): NoteEvent[] {
@@ -202,5 +202,83 @@ test('notes far outside the range are brought in, keeping their letter where pos
     assert.equal(notes.length, 1, `${name} was dropped`);
     assert.ok(PLAYABLE_MIDI.has(notes[0]!.midi));
     assert.equal(pitchClass(notes[0]!.midi), pitchClass(midi), `${name} should keep its letter`);
+  }
+});
+
+/** Reads an arrangement back as harmonica tab, e.g. "C:3↑" for blow channel 3, C side. */
+function asTab(notes: ArrangedNote[]): string[] {
+  return notes.map((n) => `${n.side}:${n.holes[0]!.channel}${n.direction === 'blow' ? '↑' : '↓'}`);
+}
+
+test('a G major tune is put on the G side, with the right channels', () => {
+  // G A B C D E F# G. F# exists only on the G side, so the whole scale belongs there.
+  const scale = melody(['G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F#5', 'G5']);
+  const notes = arrange(scale, { forceSemitones: 0 }).layers.easy.notes;
+
+  // Straight from the datasheet, G side: blow G3 B3 D4 G4 B4 D5 G5 B5 D6 G6 B6 D7,
+  // draw A3 D4 F#4 A4 C5 E5 F#5 A5 C6 E6 F#6 A6.
+  assert.deepEqual(asTab(notes), [
+    'G:4↑',  // G4  blow ch4
+    'G:4↓',  // A4  draw ch4
+    'G:5↑',  // B4  blow ch5
+    'G:5↓',  // C5  draw ch5
+    'G:6↑',  // D5  blow ch6
+    'G:6↓',  // E5  draw ch6
+    'G:7↓',  // F#5 draw ch7
+    'G:7↑',  // G5  blow ch7
+  ]);
+  assert.equal(arrange(scale, { forceSemitones: 0 }).layers.easy.sideFlips, 0);
+});
+
+test('a C major tune is put on the C side, with the right channels', () => {
+  const scale = melody(['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5']);
+  const notes = arrange(scale, { forceSemitones: 0 }).layers.easy.notes;
+
+  // C side: blow E3 G3 C4 E4 G4 C5 E5 G5..., draw G3 B3 D4 F4 A4 B4 D5 F5...
+  assert.deepEqual(asTab(notes), [
+    'C:3↑',  // C4 blow ch3
+    'C:3↓',  // D4 draw ch3
+    'C:4↑',  // E4 blow ch4
+    'C:4↓',  // F4 draw ch4
+    'C:5↑',  // G4 blow ch5
+    'C:5↓',  // A4 draw ch5
+    'C:6↓',  // B4 draw ch6
+    'C:6↑',  // C5 blow ch6
+  ]);
+  assert.equal(arrange(scale, { forceSemitones: 0 }).layers.easy.sideFlips, 0);
+});
+
+test('a tune needing both sides flips once, at the F natural to F sharp move', () => {
+  // Four bars sitting in C, then four needing F#. One flip, in the right place.
+  const tune = melody(['C5', 'D5', 'E5', 'F5', 'D5', 'E5', 'F#5', 'G5'], 0.6, 0.5);
+  const layer = arrange(tune, { forceSemitones: 0 }).layers.easy;
+  const tab = asTab(layer.notes);
+
+  assert.equal(layer.sideFlips, 1, `expected exactly one flip, got ${tab.join(' ')}`);
+  assert.ok(tab.slice(0, 4).every((t) => t.startsWith('C:')), 'the F natural phrase belongs on C');
+  assert.ok(tab.slice(6).every((t) => t.startsWith('G:')), 'the F sharp phrase belongs on G');
+});
+
+test('every hole named in an arrangement really produces the note claimed', () => {
+  // The end-to-end guarantee: whatever the tab says to play, playing it gives that pitch.
+  const material = melody([
+    'C4', 'E4', 'G4', 'B4', 'D5', 'F5', 'A5', 'C6',
+    'F#4', 'A4', 'C5', 'E5', 'G5', 'B5', 'D6', 'F#6',
+  ], 0.45, 0.4);
+
+  for (const layer of Object.values(arrange(material).layers)) {
+    for (const note of layer.notes) {
+      for (const hole of note.holes) {
+        const fromLayout = LAYOUT.find(
+          (h) => h.side === hole.side && h.channel === hole.channel && h.direction === hole.direction,
+        );
+        assert.ok(fromLayout, `no such hole: ${hole.side} ch${hole.channel} ${hole.direction}`);
+        assert.equal(
+          fromLayout.midi, hole.midi,
+          `${hole.side} side channel ${hole.channel} ${hole.direction} sounds ` +
+          `${midiToName(fromLayout.midi)}, not ${midiToName(hole.midi)}`,
+        );
+      }
+    }
   }
 });

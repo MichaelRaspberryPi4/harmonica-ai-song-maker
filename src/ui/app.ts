@@ -123,6 +123,13 @@ function showArrangement(): void {
   $('results').hidden = false;
   $('song-title').textContent = state.name;
 
+  const onC = layer.notes.filter((n) => n.side === 'C').length;
+  const onG = layer.notes.filter((n) => n.side === 'G').length;
+  const sidesUsed = onC > 0 && onG > 0 ? `both (${onC} C / ${onG} G)`
+    : onG > 0 ? 'G side only'
+    : onC > 0 ? 'C side only'
+    : '—';
+
   const substituted = layer.notes.filter((n) => n.altered === 'substituted').length;
   const octaveMoved = layer.notes.filter((n) => n.altered === 'octave').length;
   const pitches = layer.notes.map((n) => n.midi);
@@ -136,6 +143,7 @@ function showArrangement(): void {
       ? `${Math.round(state.bpm)} bpm${state.beatConfidence < 0.3 ? ' (unsure)' : ''}`
       : 'not detected'),
     stat('Notes', String(layer.notes.length)),
+    stat('Side', sidesUsed),
     stat('Harp flips', String(layer.sideFlips)),
     stat('Substituted', substituted > 0 ? `${substituted} note${substituted === 1 ? '' : 's'}` : 'none'),
     stat('Octave-moved', octaveMoved > 0 ? `${octaveMoved}` : 'none'),
@@ -161,7 +169,12 @@ function showArrangement(): void {
   }
 
   tabView?.render(layer.notes, state.beats, difficulty);
-  player?.setArrangement(layer.notes, state.beats);
+  // ensurePlayer(), not player?. -- on a fresh page the player does not exist yet, so an
+  // optional call here silently dropped the arrangement and the synth had nothing to play.
+  // The first song loaded in a tab was therefore completely silent.
+  const active = ensurePlayer();
+  active.setArrangement(layer.notes, state.beats);
+  tabView?.update(active.currentTime);
 }
 
 function stat(label: string, value: string): string {
@@ -295,7 +308,15 @@ export function start(): void {
     const button = $<HTMLButtonElement>('play');
     if (button.textContent?.startsWith('▶')) {
       button.textContent = '⏸ Pause';
-      await p.play();
+      try {
+        await p.play();
+      } catch (error) {
+        // Browsers reject play() without a recent user gesture. Swallowing that left the
+        // button reading "Pause" while nothing was playing, which is worse than the error.
+        button.textContent = '▶ Play';
+        p.pause();
+        setStatus(`Playback could not start: ${(error as Error).message}`, 'error');
+      }
     } else {
       button.textContent = '▶ Play';
       p.pause();
