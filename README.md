@@ -1,5 +1,7 @@
 # Harmonica AI Song Maker
 
+**▶ [Open the app](https://michaelraspberrypi4.github.io/harmonica-ai-song-maker/)**
+
 Turn any song into something you can actually play on a **Hohner Echo Harp 56/96** — the
 double-sided C/G tremolo. Drop in an audio file (or a link, with the optional backend), and
 the app transcribes the melody, works out the best arrangement for the instrument, and
