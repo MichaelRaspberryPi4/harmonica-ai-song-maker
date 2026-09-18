@@ -147,6 +147,30 @@ vocal isolation, nothing else.
 
 ---
 
+## Melody source
+
+Dense arrangements confuse the transcriber, so there are three ways to give it a cleaner
+line to follow.
+
+| Mode | Needs | Speed | What it does |
+|---|---|---|---|
+| Whole mix | nothing | instant | Transcribes everything. Fine for solo recordings. |
+| **Focus on the lead vocal** | nothing | ~1s | Centre-channel extraction in the browser. |
+| Isolate the vocal | the backend | minutes | Demucs source separation. Cleanest on dense mixes. |
+
+Centre focus works because commercial mixes put the lead vocal dead centre and spread
+everything else out to the sides. In each frequency bin where the two channels agree the
+sound is centred; where they disagree it is not. A soft mask built from that agreement,
+applied to the mid signal, keeps the vocal and pushes the rest down.
+
+It is not source separation and will not match Demucs. Bass and kick are centred too, so
+they survive the mask and are removed by frequency instead; a vocal panned off-centre
+defeats it; and a mono file has no stereo cue at all, so the app detects that and skips it.
+On a test mix of a centred melody against a hard-panned accompaniment in the same register,
+the whole mix transcribed as 26 garbled notes and centre focus gave the 14 correct ones.
+
+[`src/audio/vocals.ts`](src/audio/vocals.ts).
+
 ## Practice features
 
 - **A–B loop** — mark a tricky bar and repeat it endlessly.
@@ -158,8 +182,9 @@ vocal isolation, nothing else.
 
 ## Known limitations
 
-- **Busy mixes transcribe poorly** without vocal isolation. A solo instrument, a clear
-  lead vocal or a simple recording works far better than a dense production.
+- **Busy mixes transcribe poorly** without help. Set **Melody source** to *Focus on the
+  lead vocal* (the default) and most of the backing drops away; a solo instrument or clear
+  lead vocal still works best.
 - **Transcription is slow on first run** — the Basic Pitch model is a few megabytes and
   downloads once, then caches.
 - **Beat detection assumes a steady tempo.** Rubato and live recordings drift; the app

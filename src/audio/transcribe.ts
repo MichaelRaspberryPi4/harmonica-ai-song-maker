@@ -31,6 +31,60 @@ const DEFAULTS = {
   modelUrl: DEFAULT_MODEL_URL,
 };
 
+export interface DecodedAudio {
+  /** Mono downmix: what beat tracking and plain transcription use. */
+  mono: Float32Array;
+  left: Float32Array;
+  right: Float32Array;
+  sampleRate: number;
+  /** False when both channels are identical, so there is no stereo to exploit. */
+  stereo: boolean;
+}
+
+/**
+ * Decodes to both channels at 22.05kHz, keeping them separate.
+ *
+ * Downmixing during decode is the obvious thing and it destroys the one cue centre-channel
+ * vocal isolation depends on, so the split has to survive this far.
+ */
+export async function decodeStereo(data: ArrayBuffer): Promise<DecodedAudio> {
+  const decodeContext = new AudioContext();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await decodeContext.decodeAudioData(data.slice(0));
+  } finally {
+    void decodeContext.close();
+  }
+
+  const frames = Math.ceil(decoded.duration * TARGET_SAMPLE_RATE);
+  const channels = Math.min(2, decoded.numberOfChannels);
+  const offline = new OfflineAudioContext(channels, frames, TARGET_SAMPLE_RATE);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+
+  const left = rendered.getChannelData(0);
+  const right = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : left;
+  const mono = new Float32Array(left.length);
+  for (let i = 0; i < left.length; i++) mono[i] = (left[i]! + right[i]!) / 2;
+
+  return {
+    mono, left, right,
+    sampleRate: rendered.sampleRate,
+    stereo: rendered.numberOfChannels > 1,
+  };
+}
+
+/** Wraps raw samples back into an AudioBuffer for the transcriber. */
+export function bufferFromSamples(samples: Float32Array, sampleRate: number): AudioBuffer {
+  const buffer = new AudioBuffer({ length: samples.length, sampleRate, numberOfChannels: 1 });
+  // copyToChannel's type insists on a plain ArrayBuffer backing; ours always is.
+  buffer.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
+  return buffer;
+}
+
 /** Decodes any browser-supported audio file and resamples it to mono at 22.05kHz. */
 export async function decodeToMono(data: ArrayBuffer): Promise<AudioBuffer> {
   // Decode at the file's own rate first; resampling during decode loses quality on

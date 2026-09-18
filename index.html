@@ -46,10 +46,15 @@
     </div>
     <p id="backend-hint" class="hint"></p>
 
-    <label class="checkbox">
-      <input type="checkbox" id="isolate-vocals" disabled>
-      Isolate the vocal first <small>(much better melody detection, several minutes on a free server)</small>
-    </label>
+    <div class="control-group focus-row">
+      <label for="vocal-focus">Melody source</label>
+      <select id="vocal-focus">
+        <option value="off">Whole mix</option>
+        <option value="centre" selected>Focus on the lead vocal (in this browser)</option>
+        <option value="demucs" disabled>Isolate the vocal (needs the backend)</option>
+      </select>
+      <p id="focus-hint" class="hint"></p>
+    </div>
 
     <p class="hint">
       No file to hand? <button type="button" id="load-sample" class="linklike">Load a sample tune</button>

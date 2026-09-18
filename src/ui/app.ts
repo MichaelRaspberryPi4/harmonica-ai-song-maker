@@ -10,7 +10,8 @@ import { arrange, type ArrangeResult, type Difficulty, type NoteEvent } from '..
 import { extractMelody, quantise } from '../core/melody.ts';
 import { midiToName } from '../core/pitch.ts';
 import { detectBeats } from '../audio/beats.ts';
-import { decodeToMono, transcribe, channelData } from '../audio/transcribe.ts';
+import { decodeStereo, decodeToMono, transcribe, channelData, bufferFromSamples } from '../audio/transcribe.ts';
+import { isolateCentre, hasUsableStereo } from '../audio/vocals.ts';
 import { Player } from '../audio/player.ts';
 import { TabView } from './tab-view.ts';
 import {
@@ -63,27 +64,39 @@ function setProgress(fraction: number | null): void {
 async function processAudio(data: ArrayBuffer, name: string): Promise<void> {
   setStatus('Decoding audio…', 'working');
   setProgress(0.05);
-  const buffer = await decodeToMono(data);
+  const audio = await decodeStereo(data);
 
-  let analysed = buffer;
-  if ($<HTMLInputElement>('isolate-vocals').checked) {
+  // Beat tracking always runs on the full mix. Drums are exactly what a vocal-focused
+  // signal throws away, so isolating first would blind the tempo detector.
+  setStatus('Finding the beat…', 'working');
+  setProgress(0.15);
+  const grid = detectBeats(audio.mono, audio.sampleRate);
+
+  const focus = $<HTMLSelectElement>('vocal-focus').value;
+  let melodySource = audio.mono;
+
+  if (focus === 'centre') {
+    if (audio.stereo && hasUsableStereo(audio.left, audio.right)) {
+      setStatus('Focusing on the centre of the mix…', 'working');
+      setProgress(0.2);
+      melodySource = isolateCentre(audio.left, audio.right, audio.sampleRate);
+    } else {
+      setStatus('Recording is mono, so there is no centre to isolate — using the whole mix.', 'info');
+    }
+  } else if (focus === 'demucs') {
     setStatus('Isolating the vocal on the server — this takes a few minutes…', 'working');
-    setProgress(0.1);
+    setProgress(0.2);
     try {
       const wav = await isolateVocals(new Blob([data]));
-      analysed = await decodeToMono(wav);
+      melodySource = channelData(await decodeToMono(wav));
     } catch (error) {
       // Not fatal: the mix transcribes acceptably, just less cleanly.
       setStatus(`Vocal isolation failed (${(error as Error).message}). Using the full mix.`, 'info');
     }
   }
 
-  setStatus('Finding the beat…', 'working');
-  setProgress(0.2);
-  const grid = detectBeats(channelData(analysed), analysed.sampleRate);
-
   setStatus('Transcribing notes — this is the slow part…', 'working');
-  const raw = await transcribe(analysed, {
+  const raw = await transcribe(bufferFromSamples(melodySource, audio.sampleRate), {
     onProgress: (fraction) => setProgress(0.25 + fraction * 0.65),
   });
 
@@ -390,7 +403,12 @@ export function start(): void {
   void checkHealth().then((health) => {
     $<HTMLInputElement>('link').disabled = !health?.ytdlp;
     $<HTMLButtonElement>('load-link').disabled = !health?.ytdlp;
-    $<HTMLInputElement>('isolate-vocals').disabled = !health?.demucs;
+    const demucsOption = document.querySelector<HTMLOptionElement>('#vocal-focus option[value="demucs"]');
+    if (demucsOption) demucsOption.disabled = !health?.demucs;
+    $('focus-hint').textContent = health?.demucs
+      ? 'Server isolation is available and gives the cleanest result, but takes a few minutes per song.'
+      : 'Browser focus works on any stereo recording and takes about a second. True vocal isolation '
+        + 'is cleaner still on dense mixes but needs the optional backend — add one in Settings.';
     if (!health) {
       $('backend-hint').textContent =
         'No backend configured — upload an audio file to get started, or add a backend in Settings for link support.';

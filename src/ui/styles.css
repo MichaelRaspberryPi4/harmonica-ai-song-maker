@@ -342,3 +342,7 @@ button.linklike {
   text-decoration: underline;
   font: inherit;
 }
+
+.focus-row { margin-top: 14px; gap: 6px; }
+.focus-row select { max-width: 420px; }
+.focus-row .hint { margin: 2px 0 0; }
