@@ -24,6 +24,14 @@ export interface NoteEvent {
   start: number;
   end: number;
   confidence?: number;
+  /**
+   * Hole the writer chose, when a pitch is available at more than one.
+   *
+   * Each side has one pitch reachable two ways -- D4 is hole 4 drawn or hole 5 blown on
+   * the G side -- and they are different things to do. Honoured when the fitted pitch
+   * still lives at that hole, ignored when transposition has moved it elsewhere.
+   */
+  position?: number;
 }
 
 export type Alteration = 'none' | 'octave' | 'substituted';
@@ -313,9 +321,19 @@ export function assignSides(pitches: Array<{ midi: number; start: number; end: n
 }
 
 /** Within a side a pitch can appear twice; prefer the hole closest to where the mouth already is. */
-function pickHole(midi: number, side: Side, previousChannel: number | null): Hole | null {
+function pickHole(
+  midi: number,
+  side: Side,
+  previousChannel: number | null,
+  preferredPosition?: number,
+): Hole | null {
   const options = holesForMidi(midi).filter((h) => h.side === side);
   if (options.length === 0) return null;
+  // An explicit choice wins, but only if the pitch still lives at that hole -- after a
+  // transposition the hint usually refers to a note that is no longer here.
+  const preferred = preferredPosition !== undefined
+    ? options.find((h) => h.position === preferredPosition) : undefined;
+  if (preferred) return preferred;
   if (options.length === 1 || previousChannel === null) return options[0]!;
   return options.reduce((best, h) =>
     Math.abs(h.channel - previousChannel) < Math.abs(best.channel - previousChannel) ? h : best);
@@ -409,7 +427,10 @@ export function arrange(source: NoteEvent[], options: ArrangeOptions = {}): Arra
   // Transpose, then force every note onto a pitch the instrument can genuinely sound.
   const fitted = notes.map((n) => {
     const fit = fitToInstrument(n.midi + chosen.semitones, keyPitchClasses, reachable);
-    return { start: n.start, end: n.end, midi: fit.midi, sourceMidi: n.midi, altered: fit.altered };
+    return {
+      start: n.start, end: n.end, midi: fit.midi, sourceMidi: n.midi,
+      altered: fit.altered, position: n.position,
+    };
   });
 
   // With a side locked there is nothing to solve: every note is on that side or nowhere.
@@ -427,7 +448,7 @@ export function arrange(source: NoteEvent[], options: ArrangeOptions = {}): Arra
     // a wrong-looking side marker is recoverable, a missing note in the middle of a tune
     // you are learning is not.
     const hole: Hole | undefined =
-      pickHole(f.midi, sides[i]!, previousChannel) ?? holesForMidi(f.midi)[0];
+      pickHole(f.midi, sides[i]!, previousChannel, f.position) ?? holesForMidi(f.midi)[0];
     if (!hole) continue; // only if the layout itself has no such pitch
     previousChannel = hole.channel;
     melody.push({

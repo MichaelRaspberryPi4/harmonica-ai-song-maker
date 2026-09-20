@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   emptyProject, addNote, removeNote, noteAt, clearRange, transposeNotes,
-  beatsForTempo, barCount, stepSeconds, editorRows, serialize, deserialize,
+  beatsForTempo, barCount, stepSeconds, editorRows, editorLayout, serialize, deserialize,
 } from '../src/core/project.ts';
-import { PLAYABLE_MIDI } from '../src/core/harmonica.ts';
+import { PLAYABLE_MIDI, LAYOUT } from '../src/core/harmonica.ts';
 import { nameToMidi } from '../src/core/pitch.ts';
 
 const C4 = nameToMidi('C4');
@@ -167,4 +167,50 @@ test('notes outside the MIDI range are rejected', () => {
   }));
   assert.ok(restored);
   assert.equal(restored.notes.length, 0);
+});
+
+test('locked rows run in hole order, 24 down to 1, with none missing', () => {
+  for (const side of ['C', 'G'] as const) {
+    const rows = editorLayout(side);
+    assert.equal(rows.length, 24, 'one row per hole');
+    rows.forEach((row, i) => {
+      assert.equal(row.position, 24 - i, 'positions must descend without gaps');
+      assert.equal(row.direction, (24 - i) % 2 === 1 ? 'blow' : 'draw');
+    });
+  }
+});
+
+test('the row a pitch ordering used to lose is present', () => {
+  // D4 is hole 4 drawn and hole 5 blown on the G side. Ordering by pitch collapses those
+  // into one row and hole 5 disappears from the editor entirely.
+  const rows = editorLayout('G');
+  const d4 = rows.filter((r) => r.midi === nameToMidi('D4'));
+  assert.equal(d4.length, 2, 'both ways of reaching D4 need a row');
+  assert.deepEqual(d4.map((r) => r.position).sort((a, b) => a! - b!), [4, 5]);
+  assert.deepEqual(d4.map((r) => r.direction).sort(), ['blow', 'draw']);
+});
+
+test('every locked row states the pitch that hole actually sounds', () => {
+  for (const side of ['C', 'G'] as const) {
+    for (const row of editorLayout(side)) {
+      const hole = LAYOUT.find((h) => h.side === side && h.position === row.position);
+      assert.ok(hole, `no hole ${row.position} on the ${side} side`);
+      assert.equal(row.midi, hole.midi, `hole ${row.position} sounds ${hole.midi}, row says ${row.midi}`);
+    }
+  }
+});
+
+test('without a lock, rows fall back to pitch because holes are not one axis', () => {
+  const rows = editorLayout();
+  assert.equal(rows.length, PLAYABLE_MIDI.size);
+  assert.ok(rows.every((r) => r.position === undefined));
+  for (let i = 1; i < rows.length; i++) assert.ok(rows[i]!.midi < rows[i - 1]!.midi);
+});
+
+test('a note remembers which hole it was written into', () => {
+  const D4 = nameToMidi('D4');
+  const notes = addNote([], D4, 0, 0.5, 5);
+  assert.equal(notes[0]!.position, 5);
+  const restored = deserialize(serialize({ ...emptyProject(), notes }));
+  assert.equal(restored?.notes[0]?.position, 5, 'and keeps it across a save');
 });

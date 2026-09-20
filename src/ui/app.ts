@@ -132,6 +132,7 @@ async function processAudio(data: ArrayBuffer, name: string): Promise<void> {
   // heard -- exactly the note someone opens the editor to correct.
   const played = result.layers.easy.notes.map((n) => ({
     midi: n.midi, start: n.start, end: n.end, confidence: 1,
+    position: n.holes[0]?.position,
   }));
 
   project = {
@@ -366,8 +367,8 @@ function download(filename: string, text: string): void {
 
 function wireEditor(): void {
   editor = new Editor($('editor-container'), {
-    onAdd: (midi, start, duration) => {
-      project.notes = addNote(project.notes, midi, start, duration);
+    onAdd: (midi, start, duration, position) => {
+      project.notes = addNote(project.notes, midi, start, duration, position);
       rebuild();
       // Sound the note back so writing a tab is audible as you go.
       const p = ensurePlayer();
@@ -424,6 +425,7 @@ function wireEditor(): void {
       });
       project.notes = fitted.layers.easy.notes.map((n) => ({
         midi: n.midi, start: n.start, end: n.end, confidence: 1,
+        position: n.holes[0]?.position,
       }));
       project.forceSemitones = fitted.chosen.semitones === 0 ? project.forceSemitones : undefined;
     }

@@ -13,7 +13,10 @@
  */
 
 import type { NoteEvent } from './arrange.ts';
-import { PLAYABLE_MIDI, playableMidiForSide, type Side } from './harmonica.ts';
+import {
+  PLAYABLE_MIDI, playableMidiForSide, holesInPositionOrder,
+  type Side, type Direction,
+} from './harmonica.ts';
 
 export interface Project {
   name: string;
@@ -48,13 +51,37 @@ export function emptyProject(name = 'Untitled tab'): Project {
   };
 }
 
+export interface EditorRow {
+  midi: number;
+  /** Hole position 1-24, present only when a side is locked. */
+  position?: number;
+  direction?: Direction;
+}
+
 /**
- * One row per pitch in the editor, highest first.
+ * The rows of the editor grid, top to bottom.
  *
- * With a side locked the grid shows only what that side can sound, so every row is
- * reachable without turning the harp over and there is no way to write a note that the
- * arranger would then have to move.
+ * With a side locked there is one row per **hole**, numbered down from 24 to 1, not one
+ * per pitch. Ordering by pitch seems natural and is wrong for this instrument: blow and
+ * draw alternate along the comb and the draw series lags the blow series, so descending
+ * pitch produces hole numbers that read 23, 21, 24, 19, 22, 20... Nobody can find a hole
+ * from that. Ordering by hole also restores the rows that pitch ordering silently loses --
+ * D4 is both hole 4 drawn and hole 5 blown, two different things to do, and a row per
+ * pitch can only show one of them.
+ *
+ * Without a lock, holes are not a single axis at all (there are 48 across two sides, and
+ * which side a note lands on is the arranger's decision), so rows fall back to pitch.
  */
+export function editorLayout(side?: Side): EditorRow[] {
+  if (side) {
+    return holesInPositionOrder(side)
+      .map((h) => ({ midi: h.midi, position: h.position, direction: h.direction }))
+      .sort((a, b) => b.position - a.position);
+  }
+  return [...PLAYABLE_MIDI].sort((a, b) => b - a).map((midi) => ({ midi }));
+}
+
+/** Just the pitches, highest first. Kept for callers that do not care about holes. */
 export function editorRows(side?: Side): number[] {
   const pitches = side ? playableMidiForSide(side) : PLAYABLE_MIDI;
   return [...pitches].sort((a, b) => b - a);
@@ -100,7 +127,13 @@ export function noteAt(notes: NoteEvent[], midi: number, time: number): NoteEven
  * is meaningless on a harmonica, and the melody reducer downstream would silently drop one
  * of them anyway. Trimming makes the outcome visible in the editor instead.
  */
-export function addNote(notes: NoteEvent[], midi: number, start: number, duration: number): NoteEvent[] {
+export function addNote(
+  notes: NoteEvent[],
+  midi: number,
+  start: number,
+  duration: number,
+  position?: number,
+): NoteEvent[] {
   const end = start + duration;
   const kept: NoteEvent[] = [];
 
@@ -114,7 +147,7 @@ export function addNote(notes: NoteEvent[], midi: number, start: number, duratio
     if (note.end > end + EPSILON) kept.push({ ...note, start: end });
   }
 
-  kept.push({ midi, start, end, confidence: 1 });
+  kept.push({ midi, start, end, confidence: 1, position });
   return kept.sort((a, b) => a.start - b.start || a.midi - b.midi);
 }
 
@@ -168,11 +201,14 @@ export function deserialize(text: string): Project | null {
 
     const notes: NoteEvent[] = [];
     for (const note of project.notes) {
-      const { midi, start, end } = (note ?? {}) as Partial<NoteEvent>;
+      const { midi, start, end, position } = (note ?? {}) as Partial<NoteEvent>;
       if (!isNumber(midi) || !isNumber(start) || !isNumber(end)) continue;
       if (end <= start || start < 0) continue;
       if (midi < 0 || midi > 127) continue;
-      notes.push({ midi: Math.round(midi), start, end, confidence: 1 });
+      notes.push({
+        midi: Math.round(midi), start, end, confidence: 1,
+        position: isNumber(position) && position >= 1 && position <= 48 ? Math.round(position) : undefined,
+      });
     }
 
     const bpm = project.bpm;

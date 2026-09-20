@@ -174,9 +174,17 @@ new side can play, which keeps the music intact. Writing a G major scale on the 
 gives `↑7 ↓8 ↑9 ↓10 ↑11 ↓12 ↓14 ↑13` with no flips; moving that tab to the C side
 transposes it up a fifth rather than mangling the F♯.
 
-The editor is a grid of pitch against time. Click to place a note, click a note to remove
-it; rows are labelled with the hole each pitch lands on, and the tab strip below updates as
-you go. Tempo, grid resolution and new-note length are all adjustable, work saves to this
+The editor is a grid of time against **hole**. With a side locked there is one row per
+hole, numbered down from 24 to 1, matching the instrument in front of you. Click to place
+a note, click a note to remove it; the tab strip below updates as you go.
+
+Rows were originally ordered by pitch, which seems natural and is wrong here. Blow and
+draw alternate along the comb and the draw series lags the blow series, so descending pitch
+produced hole numbers reading 23, 21, 24, 19, 22, 20 — unusable for finding a hole. Hole
+order also restores the rows pitch ordering silently lost: D4 is both hole 4 drawn and hole
+5 blown, two different things to do, and a row per pitch can only show one. The cost is
+that melodic contour now zigzags between adjacent pairs, since holes 11 and 12 are C5 and
+B4; the overall trend is still low at the bottom, high at the top. Tempo, grid resolution and new-note length are all adjustable, work saves to this
 browser automatically, and **Export** writes a JSON file you can keep or re-import.
 
 Rows are pitches rather than holes deliberately. Which hole a note lands on depends on its
@@ -262,5 +270,5 @@ src/audio/      beat tracking, Basic Pitch glue, Web Audio playback
 src/ui/         tab strip, harp diagram, grid editor, application wiring
 src/api/        optional backend client
 backend/        FastAPI service for links and vocal isolation
-test/           89 tests, no browser required
+test/           96 tests, no browser required
 ```

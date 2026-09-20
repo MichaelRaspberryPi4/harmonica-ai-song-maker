@@ -355,3 +355,27 @@ test('an unlocked arrangement is unchanged by the lock work', () => {
   const free = arrange(tune, { forceSemitones: 0 }).layers.easy;
   assert.equal(free.sideFlips, 1, 'without a lock this figure still flips exactly once');
 });
+
+test('a note written into a specific hole is arranged into that hole', () => {
+  // D4 can be hole 4 drawn or hole 5 blown on the G side. The writer's choice must stick.
+  const D4 = nameToMidi('D4');
+  for (const [position, direction] of [[4, 'draw'], [5, 'blow']] as const) {
+    const layer = arrange(
+      [{ midi: D4, start: 0, end: 0.5, position }],
+      { lockSide: 'G', forceSemitones: 0 },
+    ).layers.easy;
+    assert.equal(layer.notes[0]!.holes[0]!.position, position);
+    assert.equal(layer.notes[0]!.direction, direction);
+  }
+});
+
+test('a stale hole hint is ignored rather than honoured wrongly', () => {
+  // Hole 5 is D4; ask for it on a note that transposition has turned into something else.
+  const layer = arrange(
+    [{ midi: nameToMidi('C4'), start: 0, end: 0.5, position: 5 }],
+    { lockSide: 'C', forceSemitones: 0 },
+  ).layers.easy;
+  const hole = layer.notes[0]!.holes[0]!;
+  assert.equal(hole.midi, layer.notes[0]!.midi, 'the hole must still sound the right pitch');
+  assert.equal(hole.side, 'C');
+});

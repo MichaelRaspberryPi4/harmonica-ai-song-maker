@@ -14,7 +14,7 @@
  */
 
 import type { NoteEvent } from '../core/arrange.ts';
-import { editorRows, stepSeconds, type Project } from '../core/project.ts';
+import { editorLayout, stepSeconds, type EditorRow, type Project } from '../core/project.ts';
 import { midiToName } from '../core/pitch.ts';
 import { holesForMidi, type Side } from '../core/harmonica.ts';
 
@@ -22,13 +22,13 @@ const ROW_HEIGHT = 19;
 const STEP_WIDTH = 22;
 
 export interface EditorCallbacks {
-  onAdd: (midi: number, start: number, duration: number) => void;
+  onAdd: (midi: number, start: number, duration: number, position?: number) => void;
   onRemove: (midi: number, time: number) => void;
 }
 
 export class Editor {
-  /** Rebuilt whenever the locked side changes, since that changes which pitches exist. */
-  private rows = editorRows('C');
+  /** Rebuilt whenever the locked side changes, since that changes the rows entirely. */
+  private rows: EditorRow[] = editorLayout('C');
   private readonly grid: HTMLElement;
   private readonly labels: HTMLElement;
   private readonly notesLayer: HTMLElement;
@@ -79,30 +79,32 @@ export class Editor {
 
   private buildLabels(lockedSide?: Side): void {
     this.labels.replaceChildren();
-    for (const midi of this.rows) {
+    for (const row of this.rows) {
       const label = document.createElement('div');
       label.className = 'row-label';
       label.style.height = `${ROW_HEIGHT}px`;
 
-      // With a side locked, label the hole on that side. Otherwise prefer the C side; the
-      // tab may still choose differently, and the strip below shows what was picked.
-      const holes = holesForMidi(midi);
-      const hole = holes.find((h) => h.side === (lockedSide ?? 'C')) ?? holes[0];
-      label.classList.add(`side-${hole?.side ?? 'C'}`);
-      if (midiToName(midi).startsWith('C')) label.classList.add('octave-start');
+      // With a side locked the row *is* a hole, so the label is exact. Otherwise fall
+      // back to whichever hole the C side offers for the pitch.
+      const hole = row.position !== undefined
+        ? holesForMidi(row.midi).find((h) => h.side === lockedSide && h.position === row.position)
+        : holesForMidi(row.midi).find((h) => h.side === 'C') ?? holesForMidi(row.midi)[0];
+
+      label.classList.add(`side-${hole?.side ?? 'C'}`, `dir-${hole?.direction ?? 'blow'}`);
+      if (midiToName(row.midi).startsWith('C')) label.classList.add('octave-start');
 
       const name = document.createElement('span');
       name.className = 'row-note';
-      name.textContent = midiToName(midi);
+      name.textContent = midiToName(row.midi);
       label.appendChild(name);
 
       if (hole) {
         const tab = document.createElement('span');
         tab.className = 'row-hole';
-        // Name the side in text, not only in colour: hole 23 exists on both sides and
-        // means a different note on each, so the number alone is ambiguous.
-        tab.textContent = `${hole.side}${hole.position}${hole.direction === 'blow' ? '↑' : '↓'}`;
-        tab.title = `${hole.side} side, hole ${hole.position}, ${hole.direction}`;
+        // Hole number first: with rows in hole order this column now reads 24 down to 1,
+        // which is how the instrument is laid out in front of you.
+        tab.textContent = `${hole.position}${hole.direction === 'blow' ? '↑' : '↓'}`;
+        tab.title = `${hole.side} side, hole ${hole.position}, ${hole.direction} ${midiToName(hole.midi)}`;
         label.appendChild(tab);
       }
       this.labels.appendChild(label);
@@ -110,8 +112,10 @@ export class Editor {
   }
 
   render(project: Project, totalSeconds: number): void {
-    const nextRows = editorRows(project.lockedSide);
-    if (nextRows.length !== this.rows.length || nextRows.some((m, i) => m !== this.rows[i])) {
+    const nextRows = editorLayout(project.lockedSide);
+    const changed = nextRows.length !== this.rows.length
+      || nextRows.some((r, i) => r.midi !== this.rows[i]?.midi || r.position !== this.rows[i]?.position);
+    if (changed) {
       this.rows = nextRows;
       this.buildLabels(project.lockedSide);
     }
@@ -131,24 +135,38 @@ export class Editor {
 
     this.notesLayer.replaceChildren();
     for (const note of project.notes) {
-      const rowIndex = this.rows.indexOf(note.midi);
+      const rowIndex = this.rowIndexFor(note);
       if (rowIndex < 0) continue; // a pitch the harp cannot sound; the arranger will move it
       this.notesLayer.appendChild(this.buildNote(note, rowIndex, step));
     }
   }
 
+  /** Where a note belongs: its own hole if it has one, otherwise the first row of its pitch. */
+  private rowIndexFor(note: NoteEvent): number {
+    if (note.position !== undefined) {
+      const exact = this.rows.findIndex((r) => r.position === note.position && r.midi === note.midi);
+      if (exact >= 0) return exact;
+    }
+    return this.rows.findIndex((r) => r.midi === note.midi);
+  }
+
   private buildNote(note: NoteEvent, rowIndex: number, step: number): HTMLElement {
     const element = document.createElement('div');
     element.className = 'editor-note';
+    const row = this.rows[rowIndex]!;
     const holes = holesForMidi(note.midi);
-    const hole = holes.find((h) => h.side === (this.project?.lockedSide ?? 'C')) ?? holes[0];
+    const hole = (row.position !== undefined
+      ? holes.find((h) => h.position === row.position && h.side === this.project?.lockedSide)
+      : undefined)
+      ?? holes.find((h) => h.side === (this.project?.lockedSide ?? 'C'))
+      ?? holes[0];
     element.classList.add(`side-${hole?.side ?? 'C'}`, `dir-${hole?.direction ?? 'blow'}`);
     element.style.left = `${(note.start / step) * STEP_WIDTH}px`;
     element.style.width = `${Math.max(STEP_WIDTH - 2, ((note.end - note.start) / step) * STEP_WIDTH - 2)}px`;
     element.style.top = `${rowIndex * ROW_HEIGHT + 1}px`;
     element.style.height = `${ROW_HEIGHT - 2}px`;
     element.title = `${midiToName(note.midi)} — click to delete`;
-    element.textContent = hole ? `${hole.direction === 'blow' ? '↑' : '↓'}${hole.position}` : midiToName(note.midi);
+    element.textContent = hole ? `${hole.position}${hole.direction === 'blow' ? '↑' : '↓'}` : midiToName(note.midi);
     return element;
   }
 
@@ -159,8 +177,9 @@ export class Editor {
     const y = event.clientY - rect.top;
 
     const rowIndex = Math.floor(y / ROW_HEIGHT);
-    const midi = this.rows[rowIndex];
-    if (midi === undefined) return;
+    const row = this.rows[rowIndex];
+    if (row === undefined) return;
+    const midi = row.midi;
 
     const step = stepSeconds(this.project.bpm, this.subdivision);
     const stepIndex = Math.floor(x / STEP_WIDTH);
@@ -169,7 +188,7 @@ export class Editor {
     if ((event.target as HTMLElement).classList.contains('editor-note')) {
       this.callbacks.onRemove(midi, time);
     } else {
-      this.callbacks.onAdd(midi, time, step * this.noteLengthSteps);
+      this.callbacks.onAdd(midi, time, step * this.noteLengthSteps, row.position);
     }
   }
 
