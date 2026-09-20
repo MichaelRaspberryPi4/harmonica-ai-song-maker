@@ -369,6 +369,8 @@ function addHarmony(notes: ArrangedNote[], difficulty: Difficulty, beats?: numbe
   const minDuration = difficulty === 'medium' ? 0.35 : 0.22;
 
   return notes.map((note) => {
+    // A note that already carries several holes is a chord someone wrote on purpose.
+    if (note.holes.length > 1) return note;
     const duration = note.end - note.start;
     const accented = duration >= minDuration || isStrongBeat(note.start, beats);
     if (!accented) return note;
@@ -393,6 +395,65 @@ function addHarmony(notes: ArrangedNote[], difficulty: Difficulty, beats?: numbe
 
     return extra.length > 0 ? { ...note, holes: [melody, ...extra] } : note;
   });
+}
+
+/** Notes starting within this of each other count as struck together. Seconds. */
+const SIMULTANEITY = 0.02;
+
+/**
+ * Collapses notes played at the same moment into single chords.
+ *
+ * Written note by note, a chord arrives as three separate entries sharing a start time.
+ * That is not what a chord is on this instrument: it is one action -- cover a span of
+ * holes, one breath -- so it has to become one entry carrying several holes, or the tab
+ * draws three blocks on top of each other and reads as nonsense.
+ *
+ * Notes struck together but needing opposite breaths cannot be merged, because no one can
+ * blow and draw at once. Those are left as separate entries rather than silently dropped,
+ * so they still sound and remain visible as something to fix.
+ */
+export function mergeSimultaneous(notes: ArrangedNote[]): ArrangedNote[] {
+  const out: ArrangedNote[] = [];
+  let index = 0;
+
+  while (index < notes.length) {
+    const group: ArrangedNote[] = [notes[index]!];
+    let next = index + 1;
+    while (next < notes.length && Math.abs(notes[next]!.start - notes[index]!.start) <= SIMULTANEITY) {
+      group.push(notes[next]!);
+      next++;
+    }
+    index = next;
+
+    if (group.length === 1) {
+      out.push(group[0]!);
+      continue;
+    }
+
+    // One chord per (side, breath): everything else in the group stays on its own.
+    const buckets = new Map<string, ArrangedNote[]>();
+    for (const note of group) {
+      const key = `${note.side}:${note.direction}`;
+      const bucket = buckets.get(key);
+      if (bucket) bucket.push(note); else buckets.set(key, [note]);
+    }
+
+    for (const bucket of buckets.values()) {
+      if (bucket.length === 1) { out.push(bucket[0]!); continue; }
+      // The top note leads, as it does in any chord voicing.
+      const sorted = [...bucket].sort((a, b) => b.midi - a.midi);
+      const lead = sorted[0]!;
+      const holes = sorted.flatMap((n) => n.holes);
+      out.push({
+        ...lead,
+        start: Math.min(...bucket.map((n) => n.start)),
+        end: Math.max(...bucket.map((n) => n.end)),
+        holes: holes.filter((h, i) => holes.findIndex((o) => o.position === h.position && o.side === h.side) === i),
+      });
+    }
+  }
+
+  return out.sort((a, b) => a.start - b.start);
 }
 
 // --- top level --------------------------------------------------------------
@@ -463,11 +524,13 @@ export function arrange(source: NoteEvent[], options: ArrangeOptions = {}): Arra
     });
   }
 
+  const merged = mergeSimultaneous(melody);
+
   const countFlips = (ns: ArrangedNote[]): number =>
     ns.reduce((acc, n, i) => acc + (i > 0 && n.side !== ns[i - 1]!.side ? 1 : 0), 0);
 
   const build = (difficulty: Difficulty): Arrangement => {
-    const withHarmony = addHarmony(melody, difficulty, options.beats);
+    const withHarmony = addHarmony(merged, difficulty, options.beats);
     return { difficulty, notes: withHarmony, sideFlips: countFlips(withHarmony) };
   };
 

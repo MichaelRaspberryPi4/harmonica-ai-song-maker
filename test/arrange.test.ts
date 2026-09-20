@@ -379,3 +379,63 @@ test('a stale hole hint is ignored rather than honoured wrongly', () => {
   assert.equal(hole.midi, layer.notes[0]!.midi, 'the hole must still sound the right pitch');
   assert.equal(hole.side, 'C');
 });
+
+test('notes written at the same moment become one chord, not a stack', () => {
+  // A draw chord on the G side: A4, C5, E5 at holes 8, 10 and 12.
+  const together = [
+    { midi: nameToMidi('A4'), start: 0, end: 0.4 },
+    { midi: nameToMidi('C5'), start: 0, end: 0.4 },
+    { midi: nameToMidi('E5'), start: 0, end: 0.4 },
+  ];
+  const layer = arrange(together, { lockSide: 'G', forceSemitones: 0 }).layers.easy;
+
+  assert.equal(layer.notes.length, 1, 'three simultaneous notes are one action');
+  const chord = layer.notes[0]!;
+  assert.equal(chord.direction, 'draw');
+  assert.deepEqual(chord.holes.map((h) => h.position).sort((a, b) => a - b), [8, 10, 12]);
+  assert.equal(chord.midi, nameToMidi('E5'), 'the top note leads');
+});
+
+test('a chord still sounds every one of its notes', () => {
+  const together = [
+    { midi: nameToMidi('A4'), start: 0, end: 0.4 },
+    { midi: nameToMidi('C5'), start: 0, end: 0.4 },
+    { midi: nameToMidi('E5'), start: 0, end: 0.4 },
+  ];
+  const chord = arrange(together, { lockSide: 'G', forceSemitones: 0 }).layers.easy.notes[0]!;
+  const sounded = chord.holes.map((h) => h.midi).sort((a, b) => a - b);
+  assert.deepEqual(sounded, [nameToMidi('A4'), nameToMidi('C5'), nameToMidi('E5')]);
+});
+
+test('notes needing opposite breaths at once stay separate rather than vanishing', () => {
+  // G4 is blown at hole 7, A4 is drawn at hole 8. Nobody can do both at once, but
+  // dropping one silently would hide the problem instead of showing it.
+  const impossible = [
+    { midi: nameToMidi('G4'), start: 0, end: 0.4 },
+    { midi: nameToMidi('A4'), start: 0, end: 0.4 },
+  ];
+  const layer = arrange(impossible, { lockSide: 'G', forceSemitones: 0 }).layers.easy;
+  assert.equal(layer.notes.length, 2);
+  assert.deepEqual(layer.notes.map((n) => n.direction).sort(), ['blow', 'draw']);
+});
+
+test('a deliberate chord is not thickened further by the harmony layers', () => {
+  const together = [
+    { midi: nameToMidi('A4'), start: 0, end: 0.8 },
+    { midi: nameToMidi('C5'), start: 0, end: 0.8 },
+    { midi: nameToMidi('E5'), start: 0, end: 0.8 },
+  ];
+  const { layers } = arrange(together, { lockSide: 'G', forceSemitones: 0 });
+  assert.deepEqual(
+    layers.full.notes[0]!.holes.map((h) => h.position).sort((a, b) => a - b),
+    [8, 10, 12],
+    'what was written is what is played',
+  );
+});
+
+test('a plain melody is unaffected by chord merging', () => {
+  const tune = melody(['C4', 'E4', 'G4', 'C5'], 0.5, 0.45);
+  const layer = arrange(tune, { lockSide: 'C', forceSemitones: 0 }).layers.easy;
+  assert.equal(layer.notes.length, 4);
+  for (const note of layer.notes) assert.equal(note.holes.length, 1);
+});

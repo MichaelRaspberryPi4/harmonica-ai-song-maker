@@ -10,6 +10,7 @@
 
 import type { ArrangedNote } from '../core/arrange.ts';
 import { eventsInWindow, clicksInWindow } from './scheduling.ts';
+import { TransportClock } from './clock.ts';
 
 import { createReedWave, createBreathNoise, playReed, midiToFrequency } from './reed.ts';
 
@@ -88,9 +89,8 @@ export class Player {
   /** Wall-clock time of the previous tick, used to widen the lookahead if we fall behind. */
   private lastTickAt = 0;
 
-  /** Fallback clock for when there is no original recording loaded. */
-  private silentStartedAt = 0;
-  private silentOffset = 0;
+  /** Drives position for hand-written tabs, which have no recording to follow. */
+  private readonly clock: TransportClock;
   private running = false;
 
   loop: LoopRegion | null = null;
@@ -104,6 +104,7 @@ export class Player {
     this.trackGain.gain.value = 0.7;
     this.trackGain.connect(this.context.destination);
     this.synth = new HarmonicaSynth(this.context, this.context.destination);
+    this.clock = new TransportClock(() => this.context.currentTime);
   }
 
   /** Volume of the original recording, 0-1. */
@@ -125,6 +126,7 @@ export class Player {
       this.media.playbackRate = value;
       this.media.preservesPitch = true;
     }
+    this.clock.rate = value;
     this.playbackRate = value;
   }
   private playbackRate = 1;
@@ -170,9 +172,7 @@ export class Player {
 
   /** Position in song seconds, independent of playback rate. */
   get currentTime(): number {
-    if (this.media) return this.media.currentTime;
-    if (!this.running) return this.silentOffset;
-    return this.silentOffset + (this.context.currentTime - this.silentStartedAt) * this.playbackRate;
+    return this.media ? this.media.currentTime : this.clock.position;
   }
 
   seek(songSeconds: number): void {
@@ -180,8 +180,7 @@ export class Player {
     if (this.media) {
       this.media.currentTime = clamped;
     } else {
-      this.silentOffset = clamped;
-      this.silentStartedAt = this.context.currentTime;
+      this.clock.seek(clamped);
     }
     this.scheduledThrough = clamped;
     this.callbacks.onTime?.(clamped);
@@ -204,13 +203,16 @@ export class Player {
     // Pressing play after a track has run out should start it again, not sit at the end.
     if (this.duration > 0 && this.currentTime >= this.duration - 0.05) this.seek(0);
 
+    // Read the position before anything is marked running, so it is the paused offset
+    // rather than a value derived from a clock that has not been anchored yet.
+    const from = this.currentTime;
     this.running = true;
-    this.scheduledThrough = this.currentTime;
+    this.scheduledThrough = from;
     if (this.media) {
       this.media.playbackRate = this.playbackRate;
       await this.media.play();
     } else {
-      this.silentStartedAt = this.context.currentTime;
+      this.clock.start();
     }
     this.startScheduler();
   }
@@ -220,7 +222,7 @@ export class Player {
     if (this.media) {
       this.media.pause();
     } else {
-      this.silentOffset = this.currentTime;
+      this.clock.pause();
     }
     this.stopScheduler();
   }

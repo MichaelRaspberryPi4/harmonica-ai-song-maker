@@ -73,13 +73,13 @@ export class TabView {
       if (previous && previous.side !== note.side) {
         this.strip.appendChild(this.buildFlipMarker(note, previous));
       }
-      const element = this.buildNote(note, index, difficulty);
+      const element = this.buildNote(note, index);
       this.strip.appendChild(element);
       this.elements.push(element);
     });
   }
 
-  private buildNote(note: ArrangedNote, index: number, difficulty: Difficulty): HTMLElement {
+  private buildNote(note: ArrangedNote, index: number): HTMLElement {
     const element = document.createElement('button');
     element.type = 'button';
     element.className = `tab-note side-${note.side} dir-${note.direction} altered-${note.altered}`;
@@ -100,7 +100,9 @@ export class TabView {
     name.textContent = midiToName(note.midi);
     element.appendChild(name);
 
-    if (difficulty !== 'easy' && note.holes.length > 1) {
+    // Any note carrying several holes needs its span shown, whatever the difficulty:
+    // on Easy the extra holes are not generated harmony, they are a chord someone wrote.
+    if (note.holes.length > 1) {
       const extra = document.createElement('span');
       extra.className = 'chord-tones';
       // Chord holes are never adjacent -- the opposite-breath holes sit between them and

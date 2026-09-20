@@ -178,6 +178,12 @@ The editor is a grid of time against **hole**. With a side locked there is one r
 hole, numbered down from 24 to 1, matching the instrument in front of you. Click to place
 a note, click a note to remove it; the tab strip below updates as you go.
 
+Notes written at the same moment become a **chord**: one block in the tab reading
+`cover 8-12`, with every hole lit on the diagram, rather than three blocks stacked on top
+of each other. Notes struck together that need opposite breaths cannot be merged — nobody
+blows and draws at once — so those stay separate and visible as something to fix rather
+than being silently dropped.
+
 Rows were originally ordered by pitch, which seems natural and is wrong here. Blow and
 draw alternate along the comb and the draw series lags the blow series, so descending pitch
 produced hole numbers reading 23, 21, 24, 19, 22, 20 — unusable for finding a hole. Hole
@@ -266,9 +272,9 @@ the whole mix transcribed as 26 garbled notes and centre focus gave the 14 corre
 
 ```
 src/core/       instrument model, arranger, melody reduction  (pure, fully tested)
-src/audio/      beat tracking, Basic Pitch glue, Web Audio playback
+src/audio/      beat tracking, Basic Pitch glue, reed voice, transport clock, playback
 src/ui/         tab strip, harp diagram, grid editor, application wiring
 src/api/        optional backend client
 backend/        FastAPI service for links and vocal isolation
-test/           96 tests, no browser required
+test/           109 tests, no browser required
 ```
