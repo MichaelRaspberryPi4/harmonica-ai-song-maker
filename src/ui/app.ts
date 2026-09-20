@@ -14,6 +14,11 @@ import { decodeStereo, decodeToMono, transcribe, channelData, bufferFromSamples 
 import { isolateCentre, hasUsableStereo } from '../audio/vocals.ts';
 import { Player } from '../audio/player.ts';
 import { TabView } from './tab-view.ts';
+import { Editor } from './editor.ts';
+import {
+  addNote, removeNote, clearRange, emptyProject, projectBeats, barCount,
+  saveLocal, loadLocal, serialize, deserialize, type Project,
+} from '../core/project.ts';
 import {
   checkHealth, extractFromLink, getBackendUrl, isolateVocals, setBackendUrl,
 } from '../api/backend.ts';
@@ -36,6 +41,11 @@ interface SongState {
 }
 
 let state: SongState | null = null;
+let project: Project = emptyProject();
+let editor: Editor | null = null;
+type Mode = 'transcribe' | 'edit' | 'create';
+let mode: Mode = 'transcribe';
+let arrangement: ArrangeResult | null = null;
 let difficulty: Difficulty = 'easy';
 let player: Player | null = null;
 let tabView: TabView | null = null;
@@ -115,26 +125,78 @@ async function processAudio(data: ArrayBuffer, name: string): Promise<void> {
     result,
   };
 
+  // Hand the editor the pitches that will actually sound, not the raw transcription.
+  // The arranger transposes, octave-folds and substitutes; a note left on a pitch the harp
+  // cannot play has no row in the grid, so it would be invisible there while still being
+  // heard -- exactly the note someone opens the editor to correct.
+  const played = result.layers.easy.notes.map((n) => ({
+    midi: n.midi, start: n.start, end: n.end, confidence: 1,
+  }));
+
+  project = {
+    name,
+    notes: played,
+    bpm: grid.bpm > 0 ? grid.bpm : project.bpm,
+    beatsPerBar: project.beatsPerBar,
+    forceSemitones: undefined,
+    origin: 'transcribed',
+  };
+
   setProgress(null);
-  setStatus(`Ready: ${name}`, 'done');
+  const shift = result.chosen.semitones;
+  const changed = result.layers.easy.notes.filter((n) => n.altered !== 'none').length;
+  setStatus(
+    `Ready: ${name}`
+    + (shift !== 0 ? ` — transposed ${shift > 0 ? '+' : ''}${shift} semitones to fit the harp` : '')
+    + (changed > 0 ? `, ${changed} note${changed === 1 ? '' : 's'} adjusted` : ''),
+    'done',
+  );
+  syncEditorControls();
+  rebuild();
+}
+
+/**
+ * The beat grid in force: detected from the audio when a song was transcribed, generated
+ * from the project's tempo when it was written by hand.
+ */
+function currentBeats(): number[] {
+  if (project.origin === 'transcribed' && state) return state.beats;
+  return projectBeats(project);
+}
+
+/**
+ * Re-derives everything from the project and repaints.
+ *
+ * Every path in the app funnels through here -- finishing a transcription, clicking a note
+ * into the grid, changing key, changing tempo -- so a hand-written tab and a transcribed
+ * one cannot drift apart in behaviour.
+ */
+function rebuild(options: { save?: boolean } = {}): void {
+  const beats = currentBeats();
+  arrangement = arrange(project.notes, { beats, forceSemitones: project.forceSemitones });
+  if (options.save !== false) saveLocal(project);
   showArrangement();
+  if (mode !== 'transcribe') {
+    const barSeconds = (60 / project.bpm) * project.beatsPerBar;
+    editor?.render(project, barCount(project) * barSeconds);
+  }
 }
 
 function reArrange(forceSemitones?: number): void {
-  if (!state) return;
-  state.result = arrange(state.rawNotes, { beats: state.beats, forceSemitones });
-  showArrangement();
+  project.forceSemitones = forceSemitones;
+  rebuild();
 }
 
 // --- rendering --------------------------------------------------------------
 
 function showArrangement(): void {
-  if (!state) return;
-  const { result } = state;
+  if (!arrangement) return;
+  const result = arrangement;
   const layer = result.layers[difficulty];
+  const beats = currentBeats();
 
   $('results').hidden = false;
-  $('song-title').textContent = state.name;
+  $('song-title').textContent = project.name;
 
   const onC = layer.notes.filter((n) => n.side === 'C').length;
   const onG = layer.notes.filter((n) => n.side === 'G').length;
@@ -152,9 +214,9 @@ function showArrangement(): void {
     stat('Transposed', result.chosen.semitones === 0
       ? 'original key'
       : `${result.chosen.semitones > 0 ? '+' : ''}${result.chosen.semitones} semitones`),
-    stat('Tempo', state.bpm > 0
+    stat('Tempo', project.origin === 'transcribed' && state
       ? `${Math.round(state.bpm)} bpm${state.beatConfidence < 0.3 ? ' (unsure)' : ''}`
-      : 'not detected'),
+      : `${Math.round(project.bpm)} bpm`),
     stat('Notes', String(layer.notes.length)),
     stat('Side', sidesUsed),
     stat('Harp flips', String(layer.sideFlips)),
@@ -181,12 +243,12 @@ function showArrangement(): void {
     keySelect.appendChild(element);
   }
 
-  tabView?.render(layer.notes, state.beats, difficulty);
+  tabView?.render(layer.notes, beats, difficulty);
   // ensurePlayer(), not player?. -- on a fresh page the player does not exist yet, so an
   // optional call here silently dropped the arrangement and the synth had nothing to play.
   // The first song loaded in a tab was therefore completely silent.
   const active = ensurePlayer();
-  active.setArrangement(layer.notes, state.beats);
+  active.setArrangement(layer.notes, beats);
   tabView?.update(active.currentTime);
 }
 
@@ -201,6 +263,7 @@ function ensurePlayer(): Player {
   player = new Player({
     onTime: (seconds) => {
       tabView?.update(seconds);
+      editor?.update(seconds);
       const scrub = $<HTMLInputElement>('scrub');
       if (document.activeElement !== scrub) {
         scrub.value = String(seconds);
@@ -248,6 +311,123 @@ async function handleLink(url: string): Promise<void> {
 }
 
 // --- bootstrap --------------------------------------------------------------
+
+// --- modes and the editor ----------------------------------------------------
+
+const MODES: Mode[] = ['transcribe', 'edit', 'create'];
+
+function setMode(next: Mode): void {
+  mode = next;
+  for (const m of MODES) {
+    const button = $(`mode-${m}`);
+    button.classList.toggle('selected', m === next);
+    button.setAttribute('aria-pressed', String(m === next));
+  }
+  $('panel-transcribe').hidden = next !== 'transcribe';
+  $('panel-editor').hidden = next === 'transcribe';
+
+  if (next === 'create' && project.origin === 'transcribed') {
+    // Starting fresh should not silently discard a transcription, so it becomes a new
+    // project only on an explicit confirmation.
+    if (confirm('Start a new empty tab? The transcribed one will be replaced.')) {
+      project = emptyProject();
+      state = null;
+      ensurePlayer().detachTrack();
+    }
+  }
+  syncEditorControls();
+  rebuild({ save: false });
+}
+
+function syncEditorControls(): void {
+  $<HTMLInputElement>('project-name').value = project.name;
+  $<HTMLInputElement>('project-bpm').value = String(Math.round(project.bpm));
+}
+
+function download(filename: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function wireEditor(): void {
+  editor = new Editor($('editor-container'), {
+    onAdd: (midi, start, duration) => {
+      project.notes = addNote(project.notes, midi, start, duration);
+      rebuild();
+      // Sound the note back so writing a tab is audible as you go.
+      const p = ensurePlayer();
+      void p.context.resume().then(() => p.preview(midi, duration));
+    },
+    onRemove: (midi, time) => {
+      project.notes = removeNote(project.notes, midi, time);
+      rebuild();
+    },
+  });
+
+  $<HTMLInputElement>('project-name').addEventListener('input', (event) => {
+    project.name = (event.target as HTMLInputElement).value || 'Untitled tab';
+    saveLocal(project);
+    $('song-title').textContent = project.name;
+  });
+
+  $<HTMLInputElement>('project-bpm').addEventListener('change', (event) => {
+    const bpm = Number((event.target as HTMLInputElement).value);
+    if (!Number.isFinite(bpm) || bpm < 30 || bpm > 260) {
+      syncEditorControls();
+      return;
+    }
+    // Keep the music where it sits on the grid rather than in absolute seconds, so
+    // changing tempo re-times the tab instead of scattering the notes off the beat.
+    const ratio = project.bpm / bpm;
+    project.notes = project.notes.map((n) => ({ ...n, start: n.start * ratio, end: n.end * ratio }));
+    project.bpm = bpm;
+    rebuild();
+  });
+
+  $<HTMLSelectElement>('grid-subdivision').addEventListener('change', (event) => {
+    if (editor) editor.subdivision = Number((event.target as HTMLSelectElement).value);
+    rebuild({ save: false });
+  });
+
+  $<HTMLSelectElement>('note-length').addEventListener('change', (event) => {
+    if (editor) editor.noteLengthSteps = Number((event.target as HTMLSelectElement).value);
+  });
+
+  $('editor-clear').addEventListener('click', () => {
+    if (project.notes.length === 0) return;
+    if (!confirm(`Delete all ${project.notes.length} notes?`)) return;
+    project.notes = clearRange(project.notes, 0, Number.MAX_SAFE_INTEGER);
+    rebuild();
+  });
+
+  $('editor-export').addEventListener('click', () => {
+    download(`${project.name.replace(/[^\w -]/g, '') || 'tab'}.json`, serialize(project));
+  });
+
+  $('editor-import').addEventListener('click', () => $<HTMLInputElement>('editor-import-file').click());
+
+  $<HTMLInputElement>('editor-import-file').addEventListener('change', async (event) => {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const loaded = deserialize(await file.text());
+    if (!loaded) {
+      setStatus('That file is not a tab this app can read.', 'error');
+      return;
+    }
+    project = loaded;
+    state = null;
+    ensurePlayer().detachTrack();
+    syncEditorControls();
+    rebuild();
+    setStatus(`Loaded ${project.name}`, 'done');
+  });
+
+  for (const m of MODES) $(`mode-${m}`).addEventListener('click', () => setMode(m));
+}
 
 export function start(): void {
   tabView = new TabView($('tab-container'), $('harp-container'), {
@@ -415,5 +595,19 @@ export function start(): void {
     }
   });
 
-  setStatus('Drop an audio file to begin.');
+  wireEditor();
+
+  // Pick up where the last session left off. A transcription cannot be restored (the
+  // audio is gone), but a hand-written tab is entirely in the saved notes.
+  const saved = loadLocal();
+  if (saved && saved.notes.length > 0) {
+    project = saved;
+    project.origin = 'composed';
+    syncEditorControls();
+    rebuild({ save: false });
+    setStatus(`Restored "${project.name}" from your last session.`, 'info');
+  } else {
+    syncEditorControls();
+    setStatus('Drop an audio file to begin, or switch to "Write from scratch".');
+  }
 }

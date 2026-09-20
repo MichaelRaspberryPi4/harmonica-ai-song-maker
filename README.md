@@ -147,6 +147,51 @@ vocal isolation, nothing else.
 
 ---
 
+## Three ways in
+
+A mode switcher at the top of the page. All three end up in the same place, because they
+are the same thing underneath: a list of pitches in time, which the arranger turns into
+holes and sides.
+
+| Mode | For |
+|---|---|
+| **Transcribe a song** | Drop in audio, get a tab. |
+| **Edit the tab** | Fix what the transcriber misheard, or rework a phrase to suit you. |
+| **Write from scratch** | Click a tab in by hand and hear it played back. |
+
+The editor is a grid of pitch against time. Click to place a note, click a note to remove
+it; rows are labelled with the hole each pitch lands on, and the tab strip below updates as
+you go. Tempo, grid resolution and new-note length are all adjustable, work saves to this
+browser automatically, and **Export** writes a JSON file you can keep or re-import.
+
+Rows are pitches rather than holes deliberately. Which hole a note lands on depends on its
+neighbours, since the side solve looks at the whole phrase — so a hole-per-row grid would
+have to renumber itself under the cursor every time you placed a note.
+
+Notes handed to the editor after a transcription are the pitches that will actually sound,
+not the raw transcription. The arranger transposes, octave-folds and substitutes, and a
+note left on a pitch the harp cannot play would have no row in the grid: invisible, but
+still audible. That is exactly the note someone opens the editor to fix.
+
+## The sound
+
+The synthesised harmonica is a pair of detuned reeds ([`src/audio/reed.ts`](src/audio/reed.ts)),
+not a generic oscillator. A sawtooth through a lowpass with a fast attack sounds struck,
+like a cheap piano patch, for three reasons, each addressed:
+
+- **Harmonic balance.** A sawtooth rolls off as 1/n forever. A free reed has a strong
+  second and third partial, a dip at the fourth and little above the eighth, so that shape
+  is specified as a table and handed to a `PeriodicWave`. Measured output matches the
+  target partials exactly.
+- **Attack.** 12ms reads as a hammer. A reed is set moving by air and takes 30–50ms;
+  this one measures 37ms, with brightness arriving after the fundamental rather than with it.
+- **Body and breath.** Fixed formants at 780Hz and 2.1kHz that do not track pitch, plus
+  filtered breath noise loudest at the onset, and a shallow vibrato on longer notes.
+
+Gain staging matters more than it looks: two summed oscillators through two peaking filters
+reached 2.1x full scale in an early version and clipped, which sounds harsh however good
+the timbre is. It now peaks at 0.45.
+
 ## Melody source
 
 Dense arrangements confuse the transcriber, so there are three ways to give it a cleaner
@@ -199,8 +244,8 @@ the whole mix transcribed as 26 garbled notes and centre focus gave the 14 corre
 ```
 src/core/       instrument model, arranger, melody reduction  (pure, fully tested)
 src/audio/      beat tracking, Basic Pitch glue, Web Audio playback
-src/ui/         tab strip, harp diagram, application wiring
+src/ui/         tab strip, harp diagram, grid editor, application wiring
 src/api/        optional backend client
 backend/        FastAPI service for links and vocal isolation
-test/           59 tests, no browser required
+test/           83 tests, no browser required
 ```

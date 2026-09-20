@@ -29,7 +29,19 @@
 
 <main>
 
-  <section class="input-panel" aria-labelledby="input-heading">
+  <nav class="modes" aria-label="Mode">
+    <button type="button" id="mode-transcribe" class="selected" aria-pressed="true">
+      Transcribe a song
+    </button>
+    <button type="button" id="mode-edit" aria-pressed="false">
+      Edit the tab
+    </button>
+    <button type="button" id="mode-create" aria-pressed="false">
+      Write from scratch
+    </button>
+  </nav>
+
+  <section class="input-panel" id="panel-transcribe" aria-labelledby="input-heading">
     <h2 id="input-heading" class="visually-hidden">Load a song</h2>
 
     <div id="drop-zone" class="drop-zone">
@@ -63,6 +75,48 @@
 
     <p id="status" class="status">Loading…</p>
     <progress id="progress" max="1" value="0" hidden></progress>
+  </section>
+
+  <section class="input-panel" id="panel-editor" hidden>
+    <div class="editor-toolbar">
+      <div class="control-group">
+        <label for="project-name">Tab name</label>
+        <input type="text" id="project-name" placeholder="Untitled tab">
+      </div>
+      <div class="control-group">
+        <label for="project-bpm">Tempo</label>
+        <input type="number" id="project-bpm" min="30" max="260" step="1" value="100">
+      </div>
+      <div class="control-group">
+        <label for="grid-subdivision">Grid</label>
+        <select id="grid-subdivision">
+          <option value="1">Quarter notes</option>
+          <option value="2">Eighth notes</option>
+          <option value="4" selected>Sixteenth notes</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label for="note-length">New note length</label>
+        <select id="note-length">
+          <option value="1">1 step</option>
+          <option value="2" selected>2 steps</option>
+          <option value="4">4 steps</option>
+          <option value="8">8 steps</option>
+        </select>
+      </div>
+      <div class="control-group loop">
+        <span class="group-label">Tab</span>
+        <button type="button" id="editor-clear">Clear all</button>
+        <button type="button" id="editor-export">Export</button>
+        <button type="button" id="editor-import">Import</button>
+        <input type="file" id="editor-import-file" accept="application/json" hidden>
+      </div>
+    </div>
+    <p class="hint">
+      Click the grid to place a note, click a note to delete it. Rows are pitches, labelled
+      with the hole they land on. Your work saves in this browser automatically.
+    </p>
+    <div id="editor-container"></div>
   </section>
 
   <section id="results" class="results" hidden aria-labelledby="song-title">

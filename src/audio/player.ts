@@ -11,29 +11,28 @@
 import type { ArrangedNote } from '../core/arrange.ts';
 import { eventsInWindow, clicksInWindow } from './scheduling.ts';
 
-/**
- * Cents of detune between the two reeds of a pair. A tremolo harmonica's shimmer is two
- * reeds sounding the same note slightly apart; at around 16 cents that beats about four
- * times a second in the middle of the range, which is what the instrument actually does.
- */
-const TREMOLO_DETUNE_CENTS = 16;
+import { createReedWave, createBreathNoise, playReed, midiToFrequency } from './reed.ts';
+
 const SCHEDULE_AHEAD = 0.18;
 const SCHEDULER_INTERVAL_MS = 40;
 
-export function midiToFrequency(midi: number): number {
-  return 440 * Math.pow(2, (midi - 69) / 12);
-}
+export { midiToFrequency };
 
-/** A pair of detuned reeds through a formant-ish filter: close enough to read as a harp. */
+/** The instrument voice: see reed.ts for why it is built the way it is. */
 export class HarmonicaSynth {
   private readonly context: AudioContext;
   private readonly output: GainNode;
+  private readonly wave: PeriodicWave;
+  private readonly noise: AudioBuffer;
 
   constructor(context: AudioContext, destination: AudioNode) {
     this.context = context;
     this.output = context.createGain();
     this.output.gain.value = 0.8;
     this.output.connect(destination);
+    // Built once and shared by every note.
+    this.wave = createReedWave(context);
+    this.noise = createBreathNoise(context);
   }
 
   set volume(value: number) {
@@ -42,35 +41,12 @@ export class HarmonicaSynth {
 
   /** Schedules one note. `when` and `duration` are in AudioContext time. */
   play(midi: number, when: number, duration: number, gain = 0.25): void {
-    const frequency = midiToFrequency(midi);
-    const noteGain = this.context.createGain();
-
-    const filter = this.context.createBiquadFilter();
-    filter.type = 'lowpass';
-    // Track the note so high notes stay bright without the low ones turning to buzz.
-    filter.frequency.value = Math.min(6000, frequency * 6);
-    filter.Q.value = 1.2;
-
-    for (const detune of [-TREMOLO_DETUNE_CENTS / 2, TREMOLO_DETUNE_CENTS / 2]) {
-      const osc = this.context.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.value = frequency;
-      osc.detune.value = detune;
-      osc.connect(filter);
-      osc.start(when);
-      osc.stop(when + duration + 0.08);
-    }
-
-    filter.connect(noteGain);
-    noteGain.connect(this.output);
-
-    // A reed speaks quickly but not instantly, and decays rather than cutting dead.
-    const attack = 0.012;
-    const release = 0.06;
-    noteGain.gain.setValueAtTime(0, when);
-    noteGain.gain.linearRampToValueAtTime(gain, when + attack);
-    noteGain.gain.setValueAtTime(gain, when + Math.max(attack, duration - release));
-    noteGain.gain.linearRampToValueAtTime(0, when + duration + release);
+    playReed(this.context, {
+      midi, when, duration, gain,
+      wave: this.wave,
+      noise: this.noise,
+      destination: this.output,
+    });
   }
 
   click(when: number, accent = false): void {
@@ -176,6 +152,14 @@ export class Player {
     this.mediaSource?.disconnect();
     this.media = null;
     this.mediaSource = null;
+  }
+
+  /**
+   * Sounds a single note straight away, outside the scheduled arrangement.
+   * Used by the editor so placing a note is audible as you write.
+   */
+  preview(midi: number, duration = 0.4): void {
+    this.synth.play(midi, this.context.currentTime + 0.01, Math.max(0.12, duration), 0.3);
   }
 
   setArrangement(notes: ArrangedNote[], beats: number[] = []): void {
