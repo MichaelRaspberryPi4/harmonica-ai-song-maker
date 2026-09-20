@@ -20,6 +20,8 @@ import { holesForMidi, type Side } from '../core/harmonica.ts';
 
 const ROW_HEIGHT = 19;
 const STEP_WIDTH = 22;
+/** Must match .editor-labels in the stylesheet. */
+const LABEL_WIDTH = 96;
 
 export interface EditorCallbacks {
   onAdd: (midi: number, start: number, duration: number, position?: number) => void;
@@ -34,7 +36,6 @@ export class Editor {
   private readonly notesLayer: HTMLElement;
   private readonly playhead: HTMLElement;
   private project: Project | null = null;
-  private scroller: HTMLElement | null;
 
   /** Steps per beat: 4 is sixteenths. */
   subdivision = 4;
@@ -46,7 +47,6 @@ export class Editor {
 
     this.labels = document.createElement('div');
     this.labels.className = 'editor-labels';
-    this.scroller = null;
 
     this.grid = document.createElement('div');
     this.grid.className = 'editor-grid';
@@ -57,21 +57,19 @@ export class Editor {
     this.playhead = document.createElement('div');
     this.playhead.className = 'editor-playhead';
 
-    const scroller = document.createElement('div');
-    scroller.className = 'editor-scroll';
     this.grid.appendChild(this.notesLayer);
     this.grid.appendChild(this.playhead);
-    scroller.appendChild(this.grid);
 
-    // The pitch column is outside the scroller so it stays put horizontally; it has to be
-    // moved by hand to follow vertical scrolling, or the labels drift off their rows.
-    scroller.addEventListener('scroll', () => {
-      this.labels.scrollTop = scroller.scrollTop;
-    });
-
-    this.scroller = scroller;
-    this.container.appendChild(this.labels);
-    this.container.appendChild(scroller);
+    // Labels and grid share one scroll container, with the label column stuck to the left
+    // edge. Keeping them in separate scrollers and syncing by hand does not work: the
+    // label column is exactly as tall as its content, so it has nothing to scroll and
+    // assigning scrollTop silently does nothing. The grid then slides under labels that
+    // cannot follow, rows drift out of line, and clicks land on the wrong pitch.
+    const body = document.createElement('div');
+    body.className = 'editor-body';
+    body.appendChild(this.labels);
+    body.appendChild(this.grid);
+    this.container.appendChild(body);
 
     this.grid.addEventListener('click', (event) => this.handleClick(event));
     this.buildLabels('C');
@@ -199,13 +197,16 @@ export class Editor {
     const x = (seconds / step) * STEP_WIDTH;
     this.playhead.style.transform = `translateX(${x}px)`;
 
-    const scroller = this.scroller;
-    if (!scroller) return;
+    // The label column is sticky, so the first LABEL_WIDTH pixels of the viewport are
+    // covered by it and do not count as visible grid.
+    const scroller = this.container;
+    const visible = scroller.clientWidth - LABEL_WIDTH;
+    if (visible <= 0) return;
     // Scroll only when the playhead is about to leave, and then jump a good way ahead,
     // so a long tab does not judder sideways on every frame.
-    const margin = scroller.clientWidth * 0.15;
-    if (x < scroller.scrollLeft + margin || x > scroller.scrollLeft + scroller.clientWidth - margin) {
-      scroller.scrollLeft = Math.max(0, x - scroller.clientWidth * 0.3);
+    const margin = visible * 0.15;
+    if (x < scroller.scrollLeft + margin || x > scroller.scrollLeft + visible - margin) {
+      scroller.scrollLeft = Math.max(0, x - visible * 0.3);
     }
   }
 }

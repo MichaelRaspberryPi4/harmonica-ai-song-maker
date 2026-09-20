@@ -392,19 +392,31 @@ button.linklike {
 }
 
 .editor {
-  display: flex;
-  align-items: stretch;
+  /* One scroll container for both axes. The label column lives inside it and sticks to
+     the left, so it cannot fall out of step with the rows the way a separate, separately
+     scrolled column does. Tall enough that 24 locked rows plus a horizontal scrollbar fit
+     with no vertical scrolling at all; 30 unlocked rows still scroll, and the labels come
+     with them. */
+  display: block;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  overflow: hidden;
   background: #0d0f14;
-  max-height: 460px;
+  max-height: 560px;
+  overscroll-behavior: contain;
 }
 
-/* The pitch column stays put while the grid scrolls sideways under it. */
+.editor-body {
+  display: flex;
+  align-items: flex-start;
+  width: max-content;
+}
+
 .editor-labels {
+  position: sticky;
+  left: 0;
+  z-index: 2;
   flex: 0 0 96px;
-  overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--panel);
 }
@@ -425,7 +437,6 @@ button.linklike {
 .row-label.side-C .row-hole { color: var(--side-c); }
 .row-label.side-G .row-hole { color: var(--side-g); }
 
-.editor-scroll { flex: 1; overflow: auto; }
 
 /* Grid lines are painted, not built from elements: sixteenths, beats, bars, row stripes. */
 .editor-grid {

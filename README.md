@@ -174,6 +174,9 @@ new side can play, which keeps the music intact. Writing a G major scale on the 
 gives `↑7 ↓8 ↑9 ↓10 ↑11 ↓12 ↓14 ↑13` with no flips; moving that tab to the C side
 transposes it up a fifth rather than mangling the F♯.
 
+The label column and the grid share a single scroll container, with the labels stuck to
+the left edge. They cannot drift apart, because there is nothing to keep in step.
+
 The editor is a grid of time against **hole**. With a side locked there is one row per
 hole, numbered down from 24 to 1, matching the instrument in front of you. Click to place
 a note, click a note to remove it; the tab strip below updates as you go.
