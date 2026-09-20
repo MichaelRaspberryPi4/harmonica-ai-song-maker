@@ -9,6 +9,7 @@
 import { arrange, type ArrangeResult, type Difficulty, type NoteEvent } from '../core/arrange.ts';
 import { extractMelody, quantise } from '../core/melody.ts';
 import { midiToName } from '../core/pitch.ts';
+import { playableMidiForSide } from '../core/harmonica.ts';
 import { detectBeats } from '../audio/beats.ts';
 import { decodeStereo, decodeToMono, transcribe, channelData, bufferFromSamples } from '../audio/transcribe.ts';
 import { isolateCentre, hasUsableStereo } from '../audio/vocals.ts';
@@ -173,7 +174,11 @@ function currentBeats(): number[] {
  */
 function rebuild(options: { save?: boolean } = {}): void {
   const beats = currentBeats();
-  arrangement = arrange(project.notes, { beats, forceSemitones: project.forceSemitones });
+  arrangement = arrange(project.notes, {
+    beats,
+    forceSemitones: project.forceSemitones,
+    lockSide: project.lockedSide,
+  });
   if (options.save !== false) saveLocal(project);
   showArrangement();
   if (mode !== 'transcribe') {
@@ -342,6 +347,12 @@ function setMode(next: Mode): void {
 function syncEditorControls(): void {
   $<HTMLInputElement>('project-name').value = project.name;
   $<HTMLInputElement>('project-bpm').value = String(Math.round(project.bpm));
+  $<HTMLSelectElement>('locked-side').value = project.lockedSide ?? '';
+  $('side-hint').textContent = project.lockedSide
+    ? `Locked to the ${project.lockedSide} side: every note is reachable without turning the harp over. `
+      + `That side plays ${project.lockedSide === 'C' ? 'C major, so there is no F sharp' : 'G major, so there is no F natural'} — `
+      + 'anything needing it is moved to the nearest note this side has.'
+    : 'Both sides in use. The arranger will pick sides for you and may ask you to turn the harp over mid-tune.';
 }
 
 function download(filename: string, text: string): void {
@@ -385,6 +396,40 @@ function wireEditor(): void {
     const ratio = project.bpm / bpm;
     project.notes = project.notes.map((n) => ({ ...n, start: n.start * ratio, end: n.end * ratio }));
     project.bpm = bpm;
+    rebuild();
+  });
+
+  $<HTMLSelectElement>('locked-side').addEventListener('change', (event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    const next = value === 'C' || value === 'G' ? value : undefined;
+
+    // Changing side can move notes the new side cannot sound, so say so rather than
+    // letting a tab quietly change under the writer.
+    if (next && project.notes.length > 0) {
+      const reachable = playableMidiForSide(next);
+      const stranded = project.notes.filter((n) => !reachable.has(n.midi)).length;
+      // Say "adjusted" rather than "moved": the key search usually transposes the whole
+      // tab into a key the side can play, which keeps the music intact, and only falls
+      // back to shifting individual notes when no transposition fits.
+      if (stranded > 0 && !confirm(
+        `${stranded} note${stranded === 1 ? '' : 's'} cannot be played on the ${next} side. `
+        + 'The tab will be adjusted to fit — usually by transposing the whole thing to a key '
+        + 'that side can play. Continue?')) {
+        syncEditorControls();
+        return;
+      }
+      // Commit the move so the grid shows what will actually be played.
+      const fitted = arrange(project.notes, {
+        beats: currentBeats(), forceSemitones: project.forceSemitones, lockSide: next,
+      });
+      project.notes = fitted.layers.easy.notes.map((n) => ({
+        midi: n.midi, start: n.start, end: n.end, confidence: 1,
+      }));
+      project.forceSemitones = fitted.chosen.semitones === 0 ? project.forceSemitones : undefined;
+    }
+
+    project.lockedSide = next;
+    syncEditorControls();
     rebuild();
   });
 

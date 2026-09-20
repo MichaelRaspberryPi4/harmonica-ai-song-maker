@@ -16,7 +16,7 @@
 import type { NoteEvent } from '../core/arrange.ts';
 import { editorRows, stepSeconds, type Project } from '../core/project.ts';
 import { midiToName } from '../core/pitch.ts';
-import { holesForMidi } from '../core/harmonica.ts';
+import { holesForMidi, type Side } from '../core/harmonica.ts';
 
 const ROW_HEIGHT = 19;
 const STEP_WIDTH = 22;
@@ -27,7 +27,8 @@ export interface EditorCallbacks {
 }
 
 export class Editor {
-  private readonly rows = editorRows();
+  /** Rebuilt whenever the locked side changes, since that changes which pitches exist. */
+  private rows = editorRows('C');
   private readonly grid: HTMLElement;
   private readonly labels: HTMLElement;
   private readonly notesLayer: HTMLElement;
@@ -73,20 +74,20 @@ export class Editor {
     this.container.appendChild(scroller);
 
     this.grid.addEventListener('click', (event) => this.handleClick(event));
-    this.buildLabels();
+    this.buildLabels('C');
   }
 
-  private buildLabels(): void {
+  private buildLabels(lockedSide?: Side): void {
     this.labels.replaceChildren();
     for (const midi of this.rows) {
       const label = document.createElement('div');
       label.className = 'row-label';
       label.style.height = `${ROW_HEIGHT}px`;
 
-      // Prefer the C side when a pitch exists on both; the tab may still choose otherwise,
-      // and the strip below always shows what was actually picked.
+      // With a side locked, label the hole on that side. Otherwise prefer the C side; the
+      // tab may still choose differently, and the strip below shows what was picked.
       const holes = holesForMidi(midi);
-      const hole = holes.find((h) => h.side === 'C') ?? holes[0];
+      const hole = holes.find((h) => h.side === (lockedSide ?? 'C')) ?? holes[0];
       label.classList.add(`side-${hole?.side ?? 'C'}`);
       if (midiToName(midi).startsWith('C')) label.classList.add('octave-start');
 
@@ -109,6 +110,11 @@ export class Editor {
   }
 
   render(project: Project, totalSeconds: number): void {
+    const nextRows = editorRows(project.lockedSide);
+    if (nextRows.length !== this.rows.length || nextRows.some((m, i) => m !== this.rows[i])) {
+      this.rows = nextRows;
+      this.buildLabels(project.lockedSide);
+    }
     this.project = project;
     const step = stepSeconds(project.bpm, this.subdivision);
     const steps = Math.ceil(totalSeconds / step);
@@ -135,7 +141,7 @@ export class Editor {
     const element = document.createElement('div');
     element.className = 'editor-note';
     const holes = holesForMidi(note.midi);
-    const hole = holes.find((h) => h.side === 'C') ?? holes[0];
+    const hole = holes.find((h) => h.side === (this.project?.lockedSide ?? 'C')) ?? holes[0];
     element.classList.add(`side-${hole?.side ?? 'C'}`, `dir-${hole?.direction ?? 'blow'}`);
     element.style.left = `${(note.start / step) * STEP_WIDTH}px`;
     element.style.width = `${Math.max(STEP_WIDTH - 2, ((note.end - note.start) / step) * STEP_WIDTH - 2)}px`;

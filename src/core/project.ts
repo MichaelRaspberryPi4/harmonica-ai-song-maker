@@ -13,7 +13,7 @@
  */
 
 import type { NoteEvent } from './arrange.ts';
-import { PLAYABLE_MIDI } from './harmonica.ts';
+import { PLAYABLE_MIDI, playableMidiForSide, type Side } from './harmonica.ts';
 
 export interface Project {
   name: string;
@@ -25,6 +25,11 @@ export interface Project {
   forceSemitones?: number;
   /** Set when the project came from an audio file, so playback can sing along. */
   origin: 'transcribed' | 'composed';
+  /**
+   * Confines the tab to one side of the harp, so it never asks you to turn it over.
+   * Undefined lets the arranger use both and flip where it must.
+   */
+  lockedSide?: Side;
 }
 
 export const DEFAULT_BPM = 100;
@@ -37,12 +42,22 @@ export function emptyProject(name = 'Untitled tab'): Project {
     bpm: DEFAULT_BPM,
     beatsPerBar: DEFAULT_BEATS_PER_BAR,
     origin: 'composed',
+    // A new tab starts locked. Writing one from scratch and then discovering it demands
+    // the harp be turned over mid-phrase is a worse surprise than starting in one key.
+    lockedSide: 'C',
   };
 }
 
-/** Every pitch the harp can sound, highest first: one row per pitch in the editor. */
-export function editorRows(): number[] {
-  return [...PLAYABLE_MIDI].sort((a, b) => b - a);
+/**
+ * One row per pitch in the editor, highest first.
+ *
+ * With a side locked the grid shows only what that side can sound, so every row is
+ * reachable without turning the harp over and there is no way to write a note that the
+ * arranger would then have to move.
+ */
+export function editorRows(side?: Side): number[] {
+  const pitches = side ? playableMidiForSide(side) : PLAYABLE_MIDI;
+  return [...pitches].sort((a, b) => b - a);
 }
 
 /** An evenly spaced beat grid, for projects with no audio to detect a tempo from. */
@@ -171,6 +186,7 @@ export function deserialize(text: string): Project | null {
         ? Math.round(beatsPerBar) : DEFAULT_BEATS_PER_BAR,
       forceSemitones: isNumber(forced) && Math.abs(forced) <= 24 ? Math.round(forced) : undefined,
       origin: project.origin === 'transcribed' ? 'transcribed' : 'composed',
+      lockedSide: project.lockedSide === 'C' || project.lockedSide === 'G' ? project.lockedSide : undefined,
     };
   } catch {
     return null;

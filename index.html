@@ -84,6 +84,15 @@
         <input type="text" id="project-name" placeholder="Untitled tab">
       </div>
       <div class="control-group">
+        <label for="locked-side">Harp side</label>
+        <select id="locked-side">
+          <option value="C" selected>C side only — no flips</option>
+          <option value="G">G side only — no flips</option>
+          <option value="">Both sides (allows flips)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
         <label for="project-bpm">Tempo</label>
         <input type="number" id="project-bpm" min="30" max="260" step="1" value="100">
       </div>
@@ -116,6 +125,7 @@
       Click the grid to place a note, click a note to delete it. Rows are pitches, labelled
       with the hole they land on. Your work saves in this browser automatically.
     </p>
+    <p id="side-hint" class="hint"></p>
     <div id="editor-container"></div>
   </section>
 

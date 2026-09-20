@@ -13,6 +13,7 @@
 
 import {
   LAYOUT, LOWEST_MIDI, HIGHEST_MIDI, PLAYABLE_PITCH_CLASSES, PLAYABLE_MIDI,
+  playableMidiForSide, playablePitchClassesForSide,
   holesForMidi, type Hole, type Side, type Direction,
 } from './harmonica.ts';
 import { pitchClass } from './pitch.ts';
@@ -100,10 +101,10 @@ export function foldIntoRange(midi: number): { midi: number; shifted: boolean } 
  * perfectly good pitch classes elsewhere on the harp, yet no hole on either side sounds
  * them. Range-checking alone silently loses those notes.
  */
-export function nearestPlayableOctave(midi: number): number {
-  if (PLAYABLE_MIDI.has(midi)) return midi;
+export function nearestPlayableOctave(midi: number, allowed: ReadonlySet<number> = PLAYABLE_MIDI): number {
+  if (allowed.has(midi)) return midi;
   let best: number | null = null;
-  for (const candidate of PLAYABLE_MIDI) {
+  for (const candidate of allowed) {
     if (pitchClass(candidate) !== pitchClass(midi)) continue;
     if (best === null || Math.abs(candidate - midi) < Math.abs(best - midi)) best = candidate;
   }
@@ -111,11 +112,11 @@ export function nearestPlayableOctave(midi: number): number {
 }
 
 /** The nearest pitch of any letter that a hole actually produces. The last resort. */
-export function nearestPlayablePitch(midi: number): number {
-  if (PLAYABLE_MIDI.has(midi)) return midi;
+export function nearestPlayablePitch(midi: number, allowed: ReadonlySet<number> = PLAYABLE_MIDI): number {
+  if (allowed.has(midi)) return midi;
   let best = midi;
   let bestDistance = Infinity;
-  for (const candidate of PLAYABLE_MIDI) {
+  for (const candidate of allowed) {
     const distance = Math.abs(candidate - midi);
     // Ties go downward: a flattened note reads as a colour choice, a sharpened one as an error.
     if (distance < bestDistance || (distance === bestDistance && candidate < best)) {
@@ -136,17 +137,26 @@ export function nearestPlayablePitch(midi: number): number {
 export function fitToInstrument(
   midi: number,
   keyPitchClasses: ReadonlySet<number>,
+  reachable: { midi: ReadonlySet<number>; pitchClasses: ReadonlySet<number> } = {
+    midi: PLAYABLE_MIDI, pitchClasses: PLAYABLE_PITCH_CLASSES,
+  },
 ): { midi: number; altered: Alteration } {
-  if (PLAYABLE_MIDI.has(midi)) return { midi, altered: 'none' };
+  if (reachable.midi.has(midi)) return { midi, altered: 'none' };
 
-  // The letter exists somewhere on the harp: move it by octaves to where it lives.
-  if (PLAYABLE_PITCH_CLASSES.has(pitchClass(midi))) {
-    return { midi: nearestPlayableOctave(midi), altered: 'octave' };
+  // The letter is reachable: move it by octaves to where it lives.
+  if (reachable.pitchClasses.has(pitchClass(midi))) {
+    return { midi: nearestPlayableOctave(midi, reachable.midi), altered: 'octave' };
   }
 
-  // The letter does not exist at all, so the pitch has to change.
-  const swapped = substitute(midi, keyPitchClasses);
-  return { midi: nearestPlayablePitch(swapped), altered: 'substituted' };
+  // The letter is not reachable at all, so the pitch has to change.
+  const swapped = substitute(midi, keyPitchClasses, reachable.pitchClasses);
+  return { midi: nearestPlayablePitch(swapped, reachable.midi), altered: 'substituted' };
+}
+
+/** What a given side can reach, or the whole instrument when no side is locked. */
+export function reachableFor(side?: Side): { midi: ReadonlySet<number>; pitchClasses: ReadonlySet<number> } {
+  if (!side) return { midi: PLAYABLE_MIDI, pitchClasses: PLAYABLE_PITCH_CLASSES };
+  return { midi: playableMidiForSide(side), pitchClasses: playablePitchClassesForSide(side) };
 }
 
 /**
@@ -154,12 +164,18 @@ export function fitToInstrument(
  * move down (a flattened leading tone reads as bluesy; a sharpened one reads as wrong)
  * and preferring pitch classes already common in the piece.
  */
-export function substitute(midi: number, keyPitchClasses: ReadonlySet<number>): number {
-  if (PLAYABLE_PITCH_CLASSES.has(pitchClass(midi))) return midi;
+export function substitute(
+  midi: number,
+  keyPitchClasses: ReadonlySet<number>,
+  available: ReadonlySet<number> = PLAYABLE_PITCH_CLASSES,
+): number {
+  if (available.has(pitchClass(midi))) return midi;
   const candidates: Array<{ midi: number; cost: number }> = [];
-  for (const delta of [-1, 1, -2, 2]) {
+  // A locked side is a single major scale, so a substitution may have to move a whole
+  // tone rather than a semitone; the search widens to find one.
+  for (const delta of [-1, 1, -2, 2, -3, 3]) {
     const m = midi + delta;
-    if (!PLAYABLE_PITCH_CLASSES.has(pitchClass(m))) continue;
+    if (!available.has(pitchClass(m))) continue;
     let cost = Math.abs(delta) * 2 + (delta > 0 ? 1 : 0);
     if (keyPitchClasses.has(pitchClass(m))) cost -= 2;
     candidates.push({ midi: m, cost });
@@ -206,21 +222,27 @@ function estimateFlips(notes: NoteEvent[], semitones: number): number {
   return flips;
 }
 
-export function scoreTransposition(notes: NoteEvent[], semitones: number): TranspositionOption {
+export function scoreTransposition(
+  notes: NoteEvent[],
+  semitones: number,
+  lockSide?: Side,
+): TranspositionOption {
+  const reachable = reachableFor(lockSide);
   let outOfScale = 0;
   let octaveShifted = 0;
   for (const n of notes) {
     const shifted = n.midi + semitones;
-    if (!PLAYABLE_PITCH_CLASSES.has(pitchClass(shifted))) {
+    if (!reachable.pitchClasses.has(pitchClass(shifted))) {
       outOfScale++;
-    } else if (!PLAYABLE_MIDI.has(shifted)) {
+    } else if (!reachable.midi.has(shifted)) {
       // Right letter, wrong octave -- including the F3/F#3 gap in the bottom octave,
       // which a plain range check would wrongly call playable.
       octaveShifted++;
     }
   }
   const total = Math.max(1, notes.length);
-  const estimatedFlips = estimateFlips(notes, semitones);
+  // A locked side cannot flip, by definition.
+  const estimatedFlips = lockSide ? 0 : estimateFlips(notes, semitones);
 
   // Out-of-scale notes are the worst outcome: every one is a note the listener will
   // hear as wrong. Octave folding only breaks melodic contour, so it costs less.
@@ -232,10 +254,10 @@ export function scoreTransposition(notes: NoteEvent[], semitones: number): Trans
   return { semitones, score, outOfScale, octaveShifted, estimatedFlips };
 }
 
-export function chooseTransposition(notes: NoteEvent[]): TranspositionOption[] {
+export function chooseTransposition(notes: NoteEvent[], lockSide?: Side): TranspositionOption[] {
   const options: TranspositionOption[] = [];
   for (let semitones = -11; semitones <= 11; semitones++) {
-    options.push(scoreTransposition(notes, semitones));
+    options.push(scoreTransposition(notes, semitones, lockSide));
   }
   // Ties break toward leaving the song in its original key.
   options.sort((a, b) =>
@@ -362,24 +384,38 @@ export interface ArrangeOptions {
   forceSemitones?: number;
   /** Beat onsets in seconds, used to decide which notes get harmony. */
   beats?: number[];
+  /**
+   * Confine the whole arrangement to one side of the harp.
+   *
+   * This is stronger than preferring a side: pitches the chosen side cannot sound are
+   * substituted away rather than reached for on the other one, so the result is
+   * guaranteed flip-free. Each side is a single major scale, so the cost is one pitch
+   * class -- no F# on the C side, no F natural on the G side.
+   */
+  lockSide?: Side;
 }
 
 export function arrange(source: NoteEvent[], options: ArrangeOptions = {}): ArrangeResult {
+  const { lockSide } = options;
   const notes = [...source].sort((a, b) => a.start - b.start);
-  const ranked = chooseTransposition(notes);
+  const ranked = chooseTransposition(notes, lockSide);
   const chosen = options.forceSemitones !== undefined
-    ? scoreTransposition(notes, options.forceSemitones)
+    ? scoreTransposition(notes, options.forceSemitones, lockSide)
     : ranked[0]!;
 
+  const reachable = reachableFor(lockSide);
   const keyPitchClasses = dominantPitchClasses(notes);
 
   // Transpose, then force every note onto a pitch the instrument can genuinely sound.
   const fitted = notes.map((n) => {
-    const fit = fitToInstrument(n.midi + chosen.semitones, keyPitchClasses);
+    const fit = fitToInstrument(n.midi + chosen.semitones, keyPitchClasses, reachable);
     return { start: n.start, end: n.end, midi: fit.midi, sourceMidi: n.midi, altered: fit.altered };
   });
 
-  const sides = assignSides(fitted);
+  // With a side locked there is nothing to solve: every note is on that side or nowhere.
+  const sides: Side[] = lockSide
+    ? fitted.map(() => lockSide)
+    : assignSides(fitted);
 
   const melody: ArrangedNote[] = [];
   let previousChannel: number | null = null;

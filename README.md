@@ -159,6 +159,21 @@ holes and sides.
 | **Edit the tab** | Fix what the transcriber misheard, or rework a phrase to suit you. |
 | **Write from scratch** | Click a tab in by hand and hear it played back. |
 
+### Locking to one side
+
+A new tab starts locked to the **C side**, and the selector offers C, G, or both. With a
+side locked the arrangement is guaranteed flip-free: pitches that side cannot sound are
+substituted or transposed away rather than reached for on the other one, and the editor
+grid shows only the 23 pitches that side has, so there is no way to write a note the
+arranger would then have to move.
+
+Each side is a single major scale, so the cost of locking is one pitch class — the C side
+has no F♯, the G side no F natural. When switching side would strand notes, the app says
+how many and asks first; usually it resolves by transposing the whole tab into a key the
+new side can play, which keeps the music intact. Writing a G major scale on the G side
+gives `↑7 ↓8 ↑9 ↓10 ↑11 ↓12 ↓14 ↑13` with no flips; moving that tab to the C side
+transposes it up a fifth rather than mangling the F♯.
+
 The editor is a grid of pitch against time. Click to place a note, click a note to remove
 it; rows are labelled with the hole each pitch lands on, and the tab strip below updates as
 you go. Tempo, grid resolution and new-note length are all adjustable, work saves to this
@@ -247,5 +262,5 @@ src/audio/      beat tracking, Basic Pitch glue, Web Audio playback
 src/ui/         tab strip, harp diagram, grid editor, application wiring
 src/api/        optional backend client
 backend/        FastAPI service for links and vocal isolation
-test/           83 tests, no browser required
+test/           89 tests, no browser required
 ```

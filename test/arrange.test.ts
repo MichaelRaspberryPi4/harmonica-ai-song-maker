@@ -4,7 +4,10 @@ import {
   arrange, assignSides, chooseTransposition, foldIntoRange, substitute,
   type NoteEvent, type ArrangedNote,
 } from '../src/core/arrange.ts';
-import { PLAYABLE_PITCH_CLASSES, PLAYABLE_MIDI, LOWEST_MIDI, HIGHEST_MIDI, LAYOUT } from '../src/core/harmonica.ts';
+import {
+  PLAYABLE_PITCH_CLASSES, PLAYABLE_MIDI, LOWEST_MIDI, HIGHEST_MIDI, LAYOUT,
+  playableMidiForSide,
+} from '../src/core/harmonica.ts';
 import { nameToMidi, pitchClass, midiToName } from '../src/core/pitch.ts';
 
 /** Builds a melody from note names at a steady eighth-note pace. */
@@ -281,4 +284,74 @@ test('every hole named in an arrangement really produces the note claimed', () =
       }
     }
   }
+});
+
+test('locking to a side produces no flips, whatever the material', () => {
+  // Deliberately awkward: alternating F natural and F sharp is the one figure that
+  // genuinely forces a flip when both sides are available.
+  const awkward = melody(['F4', 'F#4', 'F4', 'F#4', 'F4', 'F#4'], 0.3, 0.28);
+  for (const side of ['C', 'G'] as const) {
+    const layer = arrange(awkward, { lockSide: side }).layers.easy;
+    assert.equal(layer.sideFlips, 0, `${side} lock still flipped`);
+    assert.ok(layer.notes.every((n) => n.side === side), `${side} lock left notes elsewhere`);
+    assert.equal(layer.notes.length, awkward.length, 'and nothing was dropped');
+  }
+});
+
+test('a locked side only ever names holes that exist on it', () => {
+  const chromatic = Array.from({ length: 48 }, (_, i) => ({
+    midi: 48 + i, start: i * 0.3, end: i * 0.3 + 0.28,
+  }));
+  for (const side of ['C', 'G'] as const) {
+    const reachable = playableMidiForSide(side);
+    for (const layer of Object.values(arrange(chromatic, { lockSide: side }).layers)) {
+      for (const note of layer.notes) {
+        assert.equal(note.side, side);
+        for (const hole of note.holes) {
+          assert.equal(hole.side, side, 'a chord tone strayed to the other side');
+          assert.ok(reachable.has(hole.midi), `${hole.midi} is not on the ${side} side`);
+        }
+      }
+    }
+  }
+});
+
+test('locking to C removes F sharp; locking to G removes F natural', () => {
+  const withFSharp = arrange(melody(['F#4', 'F#5']), { lockSide: 'C', forceSemitones: 0 });
+  for (const note of withFSharp.layers.easy.notes) {
+    assert.notEqual(pitchClass(note.midi), pitchClass(nameToMidi('F#4')), 'C side has no F#');
+    assert.equal(note.altered, 'substituted');
+  }
+
+  const withF = arrange(melody(['F4', 'F5']), { lockSide: 'G', forceSemitones: 0 });
+  for (const note of withF.layers.easy.notes) {
+    assert.notEqual(pitchClass(note.midi), pitchClass(nameToMidi('F4')), 'G side has no F natural');
+    assert.equal(note.altered, 'substituted');
+  }
+});
+
+test('a tune already in the locked key is left completely alone', () => {
+  const inC = melody(['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5']);
+  const locked = arrange(inC, { lockSide: 'C', forceSemitones: 0 }).layers.easy;
+  assert.ok(locked.notes.every((n) => n.altered === 'none'), 'C major needs no adjustment on the C side');
+
+  const inG = melody(['G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F#5', 'G5']);
+  const lockedG = arrange(inG, { lockSide: 'G', forceSemitones: 0 }).layers.easy;
+  assert.ok(lockedG.notes.every((n) => n.altered === 'none'), 'G major needs no adjustment on the G side');
+});
+
+test('key search under a lock prefers a transposition the side can actually play', () => {
+  // Written in G, but locked to the C side, which has no F#. Transposing is better than
+  // substituting every leading tone, so the search should move it.
+  const inG = melody(['G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F#5', 'G5']);
+  const result = arrange(inG, { lockSide: 'C' });
+  assert.equal(result.chosen.outOfScale, 0, 'the chosen key should need no substitutions');
+  assert.ok(result.layers.easy.notes.every((n) => n.side === 'C'));
+  assert.equal(result.layers.easy.sideFlips, 0);
+});
+
+test('an unlocked arrangement is unchanged by the lock work', () => {
+  const tune = melody(['C5', 'D5', 'E5', 'F5', 'D5', 'E5', 'F#5', 'G5'], 0.6, 0.5);
+  const free = arrange(tune, { forceSemitones: 0 }).layers.easy;
+  assert.equal(free.sideFlips, 1, 'without a lock this figure still flips exactly once');
 });

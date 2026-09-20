@@ -175,6 +175,21 @@ export function holesOnSide(side: Side, layout: Hole[] = LAYOUT): Hole[] {
   return layout.filter((h) => h.side === side);
 }
 
+/**
+ * The pitches one side alone can sound.
+ *
+ * Each side is a single major scale -- C side C major, G side G major -- so locking to one
+ * costs you a pitch class: the C side has no F#, the G side no F natural. That is exactly
+ * the trade for never having to turn the harp over.
+ */
+export function playableMidiForSide(side: Side, layout: Hole[] = LAYOUT): Set<number> {
+  return new Set(layout.filter((h) => h.side === side).map((h) => h.midi));
+}
+
+export function playablePitchClassesForSide(side: Side, layout: Hole[] = LAYOUT): Set<number> {
+  return new Set([...playableMidiForSide(side, layout)].map(pitchClass));
+}
+
 /** One side's holes in the order they physically appear, left to right. */
 export function holesInPositionOrder(side: Side, layout: Hole[] = LAYOUT): Hole[] {
   return holesOnSide(side, layout).sort((a, b) => a.position - b.position);
