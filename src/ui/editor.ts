@@ -98,7 +98,9 @@ export class Editor {
       if (hole) {
         const tab = document.createElement('span');
         tab.className = 'row-hole';
-        tab.textContent = `${hole.direction === 'blow' ? '↑' : '↓'}${hole.position}`;
+        // Name the side in text, not only in colour: hole 23 exists on both sides and
+        // means a different note on each, so the number alone is ambiguous.
+        tab.textContent = `${hole.side}${hole.position}${hole.direction === 'blow' ? '↑' : '↓'}`;
         tab.title = `${hole.side} side, hole ${hole.position}, ${hole.direction}`;
         label.appendChild(tab);
       }
